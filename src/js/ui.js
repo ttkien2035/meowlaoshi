@@ -19,6 +19,10 @@
  *   frame, with at most one layout read per frame for smart scroll.
  * - Scrollback covers the session up to MAX_SEGMENTS (≈ 3 h of lecture);
  *   the complete session is always in the Library (SessionStore).
+ * - Following the lecture: the newest translation carries `.latest` (a soft
+ *   highlight; moving it touches two segments, not the history). At the
+ *   bottom the view keeps following; scrolled up to re-read, it stays put and
+ *   a "↓ N câu mới" button jumps back to the newest sentence.
  */
 
 /** Segments kept on screen; older ones leave the DOM (not the saved session). */
@@ -66,6 +70,15 @@ export class TranscriptUI {
         this._frame = 0;
         this._stick = null; // "was at the bottom" captured before a frame's mutations
         this._prov = null;  // provisional nodes { block, blockText, blockLabels, src, tgt, key }
+        // Follow the lecture.
+        this._latest = null;    // segment carrying .latest
+        this._newInFrame = 0;   // translations added since the last flush
+        this._unseen = 0;       // translations that arrived while scrolled up
+        this._jumpBtn = null;
+        this._scrollRaf = 0;
+        // Scroll events do not bubble, but a capture listener on the container
+        // sees the single-view scroller and both dual panels.
+        container.addEventListener('scroll', () => this._onUserScroll(), { capture: true, passive: true });
     }
 
     get provider() {
@@ -144,8 +157,58 @@ export class TranscriptUI {
         seg.translation = text;
         seg.status = 'translated';
         this._paintTranslation(seg);
+        this._setLatest(seg);
+        this._newInFrame++;
         this._trim();
         this._queue();
+    }
+
+    /** Scroll to the newest sentence and resume following. */
+    jumpToLatest() {
+        const smooth = !(typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
+        for (const e of this._scrollers()) e.scrollTo({ top: e.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+        this._setUnseen(0);
+    }
+
+    /** Move the `.latest` highlight to `seg` (both layouts). */
+    _setLatest(seg) {
+        if (this._latest === seg) return;
+        const prev = this._latest?.nodes;
+        if (prev) for (const n of [prev.block, prev.srcWrap, prev.tgtWrap]) n.classList.remove('latest');
+        this._latest = seg;
+        const n = seg.nodes;
+        if (n) for (const e of [n.block, n.srcWrap, n.tgtWrap]) e.classList.add('latest');
+    }
+
+    /** The scrollers of the current layout. */
+    _scrollers() {
+        if (this._isDual()) return [this.srcPanel, this.tgtPanel].filter(Boolean);
+        const f = this._flowScroller();
+        return f ? [f] : [];
+    }
+
+    _onUserScroll() {
+        if (this._scrollRaf || !this._unseen) return;
+        const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : (cb) => setTimeout(cb, 16);
+        this._scrollRaf = raf(() => {
+            this._scrollRaf = 0;
+            const main = this._isDual() ? this.tgtPanel : this._flowScroller();
+            if (main && main.scrollHeight - main.scrollTop - main.clientHeight < STICK_PX) this._setUnseen(0);
+        });
+    }
+
+    _setUnseen(n) {
+        this._unseen = n;
+        if (!n && !this._jumpBtn) return;
+        if (!this._jumpBtn) {
+            const host = this.container.parentElement || this.container;
+            this._jumpBtn = el('button', 'jump-latest');
+            this._jumpBtn.type = 'button';
+            this._jumpBtn.addEventListener('click', () => this.jumpToLatest());
+            host.appendChild(this._jumpBtn);
+        }
+        this._jumpBtn.hidden = !n;
+        if (n) this._jumpBtn.textContent = `↓ ${n} câu mới`;
     }
 
     /** Set (or clear with null) the marker on the latest translated segment. */
@@ -368,6 +431,7 @@ export class TranscriptUI {
     _unmount(seg) {
         const n = seg.nodes;
         if (!n) return;
+        if (this._latest === seg) this._latest = null;
         n.block.remove();
         n.srcWrap.remove();
         n.tgtWrap.remove();
@@ -408,7 +472,9 @@ export class TranscriptUI {
         if (!this.contentEl) return;
         this._paintProvisional();
         const stick = this._stick;
+        const added = this._newInFrame;
         this._stick = null;
+        this._newInFrame = 0;
         if (!stick) return;
         const flow = this._flowScroller();
         if (stick.flow && flow) flow.scrollTop = flow.scrollHeight;
@@ -416,6 +482,9 @@ export class TranscriptUI {
             if (stick.src && this.srcPanel) this.srcPanel.scrollTop = this.srcPanel.scrollHeight;
             if (stick.tgt && this.tgtPanel) this.tgtPanel.scrollTop = this.tgtPanel.scrollHeight;
         }
+        // Scrolled up to re-read: don't pull the view down, say what's new.
+        const following = this._isDual() ? stick.tgt : stick.flow;
+        if (added) this._setUnseen(following ? 0 : this._unseen + added);
     }
 
     /** Write the provisional state into its fixed nodes (text only, one pass). */
@@ -532,6 +601,9 @@ export class TranscriptUI {
         this.contentEl = null;
         this.srcPanel = null;
         this.tgtPanel = null;
+        this._latest = null;
+        this._newInFrame = 0;
+        this._setUnseen(0);
     }
 
     _removeListening() {

@@ -378,3 +378,11 @@ QA chạy "bài test người mới" ở tiêu chí nghiệm thu Commit E, thêm
 - README Anh/Việt: mục con **Uninstalling / Gỡ cài đặt** dưới "Dữ liệu nằm ở đâu"; Windows ghi `%APPDATA%\…` và `%LOCALAPPDATA%\…` (WebView2), **chưa kiểm trên Windows**.
 - `scripts/build-guide-pdf.py` bật `fenced_code`: khối lệnh ```` ``` ```` trước đây bị dồn thành một dòng trong PDF.
 - QA kiểm theo tiêu chí E11 ở trên; thêm: sau "Gỡ sạch", `ls ~/Library/Preferences | grep meowlaoshi` và `ls ~/Library/"Saved Application State" | grep meowlaoshi` — nếu còn file thì báo để thêm vào hướng dẫn.
+
+---
+
+### Theo dõi câu vừa dịch — đã làm (kỹ sư trưởng, 2026-09-27; Kiên yêu cầu)
+
+- Câu dịch mới nhất có class `.latest`: nền nhạt màu nhấn + vạch dọc bên trái (token `--latest-bg` / `--latest-bar` cho sáng và tối, chữ giữ màu cũ nên tương phản không đổi). Chuyển sang câu mới chỉ bỏ/thêm class ở 2 câu, không duyệt lịch sử.
+- Đang ở cuối: vẫn tự cuộn theo như cũ. Đã cuộn lên đọc lại: không giật màn hình; hiện nút nổi **"↓ N câu mới"**, bấm → cuộn mượt tới câu mới nhất (không mượt nếu bật giảm chuyển động); tự cuộn xuống cuối bằng tay cũng làm nút biến mất. Áp dụng cho cả một cột và hai cột.
+- Kiểm bằng jsdom (không commit). **QA trên Mac:** buổi dài (≥ 200 câu), sáng/tối, một cột/hai cột: câu mới nổi bật vừa đủ, không nhấp nháy; cuộn lên → nút hiện đúng số câu; bấm nút về đúng câu mới.

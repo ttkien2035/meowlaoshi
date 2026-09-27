@@ -2716,3 +2716,27 @@ a { cursor: pointer; }
 #btn-start.attention { animation: startPulse 1.6s ease-in-out 3; }
 @keyframes startPulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-glow); } 50% { box-shadow: 0 0 0 8px var(--accent-glow); } }
 @media (prefers-reduced-motion: reduce) { #btn-start.attention { animation: none; outline: 2px solid var(--accent); outline-offset: 2px; } .level-fill { transition: none; } }
+
+/* ─── Following the lecture: newest sentence + jump button ─── */
+:root { --latest-bg: rgba(10, 132, 255, 0.11); --latest-bar: var(--accent); }
+:root[data-theme="light"] { --latest-bg: rgba(0, 98, 204, 0.07); --latest-bar: var(--accent-strong); }
+.seg-block .seg-translated,
+.seg-pair { border-radius: 6px; transition: background-color 0.5s ease, box-shadow 0.5s ease; }
+.seg-block.latest .seg-translated,
+.dual-view .seg-pair.latest .seg-text {
+  background: var(--latest-bg);
+  box-shadow: inset 3px 0 0 var(--latest-bar);
+  padding: 2px 8px 2px 10px;
+  margin-left: -10px;
+}
+#transcript-container { position: relative; }
+.jump-latest {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 5;
+  padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border-light);
+  background: var(--accent-strong); color: #fff; font: inherit; font-size: 12.5px; font-weight: 600;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); cursor: default;
+}
+.jump-latest:hover { filter: brightness(1.08); }
+@media (prefers-reduced-motion: reduce) {
+  .seg-block .seg-translated, .seg-pair { transition: none; }
+}

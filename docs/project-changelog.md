@@ -7,6 +7,13 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## Unreleased
+
+### New
+- **Follow the lecture:** the newest translated sentence is softly highlighted. Scrolled up to re-read, the view no longer jumps; a **↓ N câu mới** (N new sentences) button takes you back to the newest one.
+
+---
+
 ## v1.0.0 - 2026-09-26
 
 **MeowLaoshi 猫老师** (formerly My Translator — Lecture Edition) — the first release by ttkien2035. Real-time Chinese → Vietnamese translation of lectures, with notes, built for finance and economics students.
