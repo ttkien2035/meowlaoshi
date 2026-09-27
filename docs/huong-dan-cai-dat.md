@@ -14,8 +14,8 @@ Xem loại chip: bấm biểu tượng quả táo ở góc trên bên trái màn
 
 | Máy của bạn | File cần mở |
 |---|---|
-| Chip Apple (M1 trở lên) | `MeowLaoshi_1.0.0_aarch64.dmg` |
-| Chip Intel | `MeowLaoshi_1.0.0_x64.dmg` |
+| Chip Apple (M1 trở lên) | `MeowLaoshi_1.1.0_aarch64.dmg` |
+| Chip Intel | `MeowLaoshi_1.1.0_x64.dmg` |
 
 ## 2. Cài đặt và mở lần đầu
 
