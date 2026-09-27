@@ -34,9 +34,9 @@
 | ☁️ **Soniox** `stt-rt-v5` (khuyên dùng) | cloud | chữ tạm **~1,3 s** (90 % trong 2,1 s); bản dịch **~1,7 s** (90 % trong 3,0 s) — *đã đo* | **$0,12/giờ**, đã gồm dịch | 60+ ngôn ngữ; nhận **từ điển thuật ngữ** và ngữ cảnh của hồ sơ môn học; chính xác nhất trên bài giảng thật (lỗi 3,0 % so với 11,4 % của Local) |
 | 🖥️ **Local** (offline) | trên máy, thuần Rust | hiện **sau khi hết mỗi câu**: **~1,0 s** trên MacBook Air M5 dùng Metal (0,35 s nhận biết ngắt câu + ~0,2 s nhận dạng + ~0,45 s dịch), ~1,9 s trên CPU x86 — *đã đo* | **miễn phí** | X-ASR Zipformer (có dấu câu; từ điển môn học thành hotword) + Hy-MT2-1.8B của Tencent (từ điển đưa vào prompt); không cần mạng hay VPN |
 | ⚡ **OpenAI Realtime** `gpt-realtime-translate` | cloud | chưa đo | **≈ $3,06/giờ** ($0,034/phút dịch + $0,017/phút nhận dạng `gpt-realtime-whisper`) | có giọng nói dịch; ở Trung Quốc đại lục cần VPN; không dùng được từ điển |
-| 🌏 **Qwen LiveTranslate** `qwen3-livetranslate-flash-realtime` | cloud (Alibaba, Singapore) | chưa đo (Alibaba công bố 2,3 s cho các bản LiveTranslate mới hơn) | **≈ $0,35/giờ** (12,5 token âm thanh/giây, $7,50 / 1 triệu token) + hạn mức miễn phí cho tài khoản mới — *ước tính* | vào được từ Trung Quốc không cần VPN; chỉ văn bản; không dùng được từ điển; Alibaba đã xếp model này vào loại cũ (legacy) |
+| 🌏 **Qwen LiveTranslate** (không khuyên dùng) | cloud (Alibaba, Singapore) | dịch xong **~0,8 s** sau khi hết câu — *đã đo trên Qwen3.8* | **≈ $5/giờ** — *đã đo* từ số token dịch vụ báo lại trên Qwen3.8 (≈ 40 lần Soniox) | vào được từ Trung Quốc không cần VPN; nhận thuật ngữ tốt nhưng không dùng được từ điển; vẫn có trong app nhưng không dùng. App vẫn dùng giao thức của model cũ `qwen3-livetranslate-flash-realtime` |
 
-Độ trễ Soniox đo trên 2 phút bài giảng thật, gửi đúng tốc độ thực từ Việt Nam qua mạng thường, có nạp từ điển tài chính; số liệu là trung vị từ lúc một chữ được nói ra tới lúc chữ đó (hoặc bản dịch) về tới app. Giá là giá niêm yết của nhà cung cấp ngày 26-09-2026 ([Soniox](https://soniox.com/pricing), [OpenAI](https://developers.openai.com/api/docs/pricing), [Alibaba Model Studio](https://www.alibabacloud.com/help/en/model-studio/qwen3-8-livetranslate-flash-realtime)).
+Độ trễ Soniox đo trên 2 phút bài giảng thật, gửi đúng tốc độ thực từ Việt Nam qua mạng thường, có nạp từ điển tài chính; số liệu là trung vị từ lúc một chữ được nói ra tới lúc chữ đó (hoặc bản dịch) về tới app. Giá là giá niêm yết của nhà cung cấp ngày 26-09-2026 ([Soniox](https://soniox.com/pricing), [OpenAI](https://developers.openai.com/api/docs/pricing)); giá Qwen là số đo thật (xem *So sánh dịch vụ dịch trực tiếp trên cloud* bên dưới).
 
 Tên model của từng engine chỉnh được trong **Cài đặt › Model** (kể cả GGUF tuỳ chỉnh cho Local). Cùng chỗ đó có ô **LLM hỗ trợ** (DeepSeek / Qwen DashScope / Zhipu GLM / OpenAI / bất kỳ API chuẩn OpenAI) dành cho các tính năng dịch lại học thuật và tóm tắt sắp tới.
 
@@ -363,6 +363,25 @@ QA đo ngày 26-09-2026 trên MacBook Air M5 (10 nhân, 16 GB, macOS 27): 72 s a
 | Lỗi trên bộ câu thuật ngữ | 1,8 % | 1,0 % | 1,1 % |
 
 Soniox là engine chính có lý do; engine Local là dự phòng offline. Từ điển đưa vào context giúp Soniox nhận đúng thuật ngữ hơn và dịch nhất quán hơn mà không tăng lỗi. Giới hạn 8 000 token của Soniox là thật: gửi cả ~480 mục bị từ chối ("Context is too long: 9958 tokens"), nên `glossary/index.js` phải cắt theo ngân sách (Soniox đếm khoảng 0,87 lần ước lượng của app; context ước lượng 8 025 được chấp nhận).
+
+### So sánh dịch vụ dịch trực tiếp trên cloud (27-09-2026, key thật, cùng audio)
+
+Gửi âm thanh đúng tốc độ thực: 5 phút bài giảng tài chính thật (chấm theo phụ đề người chép), 72 câu thuật ngữ tài chính trong giảng đường mô phỏng, và 12 câu cách nhau 4 s để đo độ trễ.
+
+| | **Soniox** `stt-rt-v5` + từ điển | Qwen3.8-LiveTranslate | Gemini 3.5 Live Translate |
+|---|---|---|---|
+| Lỗi chép lời, bài giảng thật | **2,7 %** | 11,3 %¹ | 7,8 % |
+| Lỗi chép lời, câu thuật ngữ trong lớp | **1,0 %** | 1,9 % | 14,0 % |
+| Nhận đúng thuật ngữ tài chính | 96,2 % | **97,7 %** | 72,7 % |
+| Bản dịch dùng đúng từ tiếng Việt trong từ điển | **97/133** | 88/133 | 55/133 |
+| Hết câu → dịch xong (trung vị) | 0,84 s | **0,82 s** | 2,20 s |
+| Chi phí mỗi giờ | **$0,12** | ≈ $5² | ≈ $2,2 |
+| Từ điển môn học | có | không | không |
+| Dùng ở Trung Quốc không cần VPN | không | có | không |
+
+¹ Qwen chép cả từ đệm (呃, 哈) mà phụ đề đã lược; ở bộ câu thuật ngữ thì gần bằng Soniox. ² Tính từ số token dịch vụ báo lại (≈ 61 token âm thanh + 48 token chữ đầu ra mỗi giây).
+
+Kết luận: **Soniox là engine chính** — chính xác nhất, nhanh ngang các dịch vụ còn lại và rẻ hơn 20–40 lần. Qwen3.8 bằng Soniox về thuật ngữ và tốc độ nhưng tốn ≈ $5/giờ nên không dùng. Gemini 3.5 yếu hơn ở thuật ngữ tài chính, chậm hơn, và luôn trả kèm giọng đọc dù chỉ yêu cầu chữ; không đưa vào app.
 
 ### Dịch Trung → Việt — 25 câu bài giảng tài chính, giải mã greedy
 

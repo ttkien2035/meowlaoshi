@@ -36,9 +36,9 @@ A **real-time** speech translation app for macOS and Windows, tuned for **listen
 | ☁️ **Soniox** `stt-rt-v5` (recommended) | cloud | live text **~1.3 s** (90 % within 2.1 s); translation **~1.7 s** (90 % within 3.0 s) — *measured* | **$0.12/hour**, translation included | 60+ languages; uses the course profile's **glossary** and context; most accurate on real lectures (3.0 % errors vs 11.4 % for Local) |
 | 🖥️ **Local** (offline) | on device, pure Rust | appears **after each sentence**: **~1.0 s** on a MacBook Air M5 with Metal (0.35 s pause detection + ~0.2 s recognition + ~0.45 s translation), ~1.9 s on an x86 CPU — *measured* | **free** | X-ASR Zipformer (punctuation; the course glossary becomes hotwords) + Tencent Hy-MT2-1.8B (glossary in the prompt); no network or VPN needed |
 | ⚡ **OpenAI Realtime** `gpt-realtime-translate` | cloud | not measured here | **≈ $3.06/hour** ($0.034/min translation + $0.017/min `gpt-realtime-whisper` transcription) | translated voice output; needs a VPN in mainland China; no glossary |
-| 🌏 **Qwen LiveTranslate** `qwen3-livetranslate-flash-realtime` | cloud (Alibaba, Singapore) | not measured here (Alibaba states 2.3 s for its newer LiveTranslate models) | **≈ $0.35/hour** (12.5 audio tokens/s at $7.50 per 1M) + a free quota for new accounts — *estimate* | reachable from mainland China without a VPN; text only; no glossary; Alibaba now lists this model as legacy |
+| 🌏 **Qwen LiveTranslate** (not recommended) | cloud (Alibaba, Singapore) | translation done **~0.8 s** after a sentence ends — *measured on Qwen3.8* | **≈ $5/hour** — *measured* from the service's own token counts on Qwen3.8 (≈ 40× Soniox) | reachable from mainland China without a VPN; accurate on terms but no glossary; kept in the app, not used. The app still speaks the legacy `qwen3-livetranslate-flash-realtime` protocol |
 
-Soniox latency was measured on 2 minutes of a real lecture streamed at real-time pace from Vietnam over an ordinary connection, with the finance glossary loaded; the figures are medians from when a word is spoken to when it (or its translation) reaches the app. Prices are the vendors' list prices on 2026-09-26 ([Soniox](https://soniox.com/pricing), [OpenAI](https://developers.openai.com/api/docs/pricing), [Alibaba Model Studio](https://www.alibabacloud.com/help/en/model-studio/qwen3-8-livetranslate-flash-realtime)).
+Soniox latency was measured on 2 minutes of a real lecture streamed at real-time pace from Vietnam over an ordinary connection, with the finance glossary loaded; the figures are medians from when a word is spoken to when it (or its translation) reaches the app. Prices are the vendors' list prices on 2026-09-26 ([Soniox](https://soniox.com/pricing), [OpenAI](https://developers.openai.com/api/docs/pricing)); Qwen's is measured (see *Cloud live translation compared* below).
 
 Each engine's model name can be changed in **Cài đặt › Model** (Settings › Model), including a custom GGUF for Local. The same screen holds a **helper LLM** slot (DeepSeek / Qwen DashScope / Zhipu GLM / OpenAI / any OpenAI-compatible API) for the upcoming academic re-translation and summary features.
 
@@ -380,6 +380,25 @@ Measured 2026-09-26 by QA on a MacBook Air M5 (10 cores, 16 GB, macOS 27): 72 s 
 | Errors on the term set | 1.8 % | 1.0 % | 1.1 % |
 
 Soniox is the primary engine for a reason; the Local engine is the offline fallback. The glossary context lifts Soniox's term recall and translation consistency at no cost in errors. Soniox's 8 000-token context limit is real: the full ~480-term glossary was rejected ("Context is too long: 9958 tokens"), which is why `glossary/index.js` budgets it (Soniox counts about 0.87× this app's estimate; a context estimated at 8 025 was accepted).
+
+### Cloud live translation compared (2026-09-27, real keys, same audio)
+
+Streamed at real-time pace: 5 minutes of a real finance lecture (scored against human subtitles), 72 finance-term sentences in a simulated classroom, and 12 sentences 4 s apart for latency.
+
+| | **Soniox** `stt-rt-v5` + glossary | Qwen3.8-LiveTranslate | Gemini 3.5 Live Translate |
+|---|---|---|---|
+| Transcript errors, real lecture | **2.7 %** | 11.3 %¹ | 7.8 % |
+| Transcript errors, classroom term set | **1.0 %** | 1.9 % | 14.0 % |
+| Finance-term recall | 96.2 % | **97.7 %** | 72.7 % |
+| Translation uses the glossary's Vietnamese term | **97/133** | 88/133 | 55/133 |
+| Sentence end → translation done (median) | 0.84 s | **0.82 s** | 2.20 s |
+| Cost per hour | **$0.12** | ≈ $5² | ≈ $2.2 |
+| Course glossary | yes | no | no |
+| Mainland China without VPN | no | yes | no |
+
+¹ Qwen transcribes fillers (呃, 哈) that the subtitles leave out; on the term set it is close to Soniox. ² From the service's own usage counts (≈ 61 audio + 48 text-output tokens per second).
+
+Decision: **Soniox stays the main engine** — most accurate, as fast as anything tested, and 20–40× cheaper. Qwen3.8 matches it on terms and speed but costs ≈ $5/hour, so it is not used. Gemini 3.5 is weaker on finance terms and slower, and always returns audio even when only text is requested; it is not integrated.
 
 ### Translation (Chinese → Vietnamese) — 25 finance-lecture sentences, greedy decoding
 
