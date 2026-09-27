@@ -1133,14 +1133,14 @@ class App {
         this._updateTranslationTypeUI(translationType);
 
         // Two-way language selects
-        document.getElementById('select-lang-a').value = s.language_a || 'ja';
+        document.getElementById('select-lang-a').value = s.language_a || 'zh';
         document.getElementById('select-lang-b').value = s.language_b || 'vi';
 
         // Strict language detection
         document.getElementById('check-strict-lang').checked = s.language_hints_strict || false;
 
         // Endpoint delay
-        const endpointDelay = s.endpoint_delay || 3000;
+        const endpointDelay = s.endpoint_delay || 1500;
         const delaySlider = document.getElementById('range-endpoint-delay');
         if (delaySlider) delaySlider.value = endpointDelay;
         const delayValue = document.getElementById('endpoint-delay-value');
@@ -1233,10 +1233,10 @@ class App {
             target_language: document.getElementById('select-target-lang').value,
             translation_mode: document.getElementById('select-translation-mode').value,
             translation_type: document.getElementById('select-translation-type')?.value || 'one_way',
-            language_a: document.getElementById('select-lang-a')?.value || 'ja',
+            language_a: document.getElementById('select-lang-a')?.value || 'zh',
             language_b: document.getElementById('select-lang-b')?.value || 'vi',
             language_hints_strict: document.getElementById('check-strict-lang')?.checked || false,
-            endpoint_delay: parseInt(document.getElementById('range-endpoint-delay')?.value || 3000),
+            endpoint_delay: parseInt(document.getElementById('range-endpoint-delay')?.value || 1500),
             audio_source: document.querySelector('input[name="audio-source"]:checked')?.value || 'system',
             theme: document.getElementById('select-theme')?.value || 'light',
             font_size: parseInt(document.getElementById('range-font-size').value),
@@ -2803,7 +2803,7 @@ class App {
             const translationType = settings.translation_type || 'one_way';
             this.sessionMode = translationType;
             if (translationType === 'two_way') {
-                this.sessionSourceLang = settings.language_a || 'ja';
+                this.sessionSourceLang = settings.language_a || 'zh';
                 this.sessionTargetLang = settings.language_b || 'vi';
             } else {
                 this.sessionSourceLang = settings.source_language || 'auto';
@@ -3034,7 +3034,7 @@ class App {
             languageA: settings.language_a,
             languageB: settings.language_b,
             languageHintsStrict: settings.language_hints_strict || false,
-            endpointDelay: settings.endpoint_delay || 3000,
+            endpointDelay: settings.endpoint_delay || 1500,
         });
 
         // Start audio capture — Rust batches audio every 200ms, JS just forwards

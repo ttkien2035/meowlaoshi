@@ -155,6 +155,25 @@ pub struct Settings {
     #[serde(default = "engine_picker_done_for_existing_file")]
     pub engine_picker_done: bool,
 
+    // ── Soniox session (Settings › Engine dịch). These were saved by the
+    // form but missing here, so serde dropped them on every save. ──
+    /// `max_endpoint_delay_ms`: how long Soniox may wait before closing a
+    /// sentence. 1500 measured best on a real lecture: translation lag
+    /// 0.79 s median (p90 1.0 s) vs 1.51 s (p90 3.2 s) at the old 3000, same
+    /// accuracy; 500 chops sentences and is slower.
+    #[serde(default = "default_endpoint_delay")]
+    pub endpoint_delay: u32,
+    /// "one_way" | "two_way".
+    #[serde(default = "default_translation_type")]
+    pub translation_type: String,
+    /// Two-way pair.
+    #[serde(default = "default_language_a")]
+    pub language_a: String,
+    #[serde(default = "default_language_b")]
+    pub language_b: String,
+    #[serde(default)]
+    pub language_hints_strict: bool,
+
     // ── Microphone chain (Settings → Micro) ──
     /// macOS: capture via Apple's Voice-Processing I/O unit (system AEC/NS/AGC).
     pub mic_voice_processing: bool,
@@ -231,6 +250,11 @@ impl Default for Settings {
             mic_denoise: false,
             mic_vad: false,
             settings_schema: SETTINGS_SCHEMA,
+            endpoint_delay: default_endpoint_delay(),
+            translation_type: default_translation_type(),
+            language_a: default_language_a(),
+            language_b: default_language_b(),
+            language_hints_strict: false,
         }
     }
 }
@@ -244,6 +268,22 @@ fn engine_picker_done_for_existing_file() -> bool {
 /// Serde default for `local_tts_speed` (field-level default would give 0.0).
 fn default_local_tts_speed() -> f32 {
     1.0
+}
+
+fn default_endpoint_delay() -> u32 {
+    1500
+}
+
+fn default_translation_type() -> String {
+    "one_way".to_string()
+}
+
+fn default_language_a() -> String {
+    "zh".to_string()
+}
+
+fn default_language_b() -> String {
+    "vi".to_string()
 }
 
 /// Get the settings file path:
@@ -374,6 +414,23 @@ mod tests {
         // Explicit value round-trips.
         let explicit: Settings = serde_json::from_str(r#"{"engine_picker_done":false}"#).unwrap();
         assert!(!explicit.engine_picker_done);
+    }
+
+    #[test]
+    fn soniox_session_fields_round_trip() {
+        // Fresh and pre-existing files get the measured default…
+        assert_eq!(Settings::default().endpoint_delay, 1500);
+        let old: Settings = serde_json::from_str(r#"{"translation_mode":"soniox"}"#).unwrap();
+        assert_eq!((old.endpoint_delay, old.translation_type.as_str(), old.language_a.as_str(), old.language_b.as_str()), (1500, "one_way", "zh", "vi"));
+        // …and what the form saves now survives a save/load.
+        let s = Settings {
+            endpoint_delay: 1000,
+            translation_type: "two_way".into(),
+            language_hints_strict: true,
+            ..Default::default()
+        };
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!((back.endpoint_delay, back.translation_type.as_str(), back.language_hints_strict), (1000, "two_way", true));
     }
 
     #[test]

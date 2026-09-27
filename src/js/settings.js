@@ -63,6 +63,12 @@ const DEFAULT_SETTINGS = {
   mic_agc: false,
   mic_denoise: false,
   mic_vad: false,
+  // Soniox session (mirror settings.rs)
+  endpoint_delay: 1500,
+  translation_type: 'one_way',
+  language_a: 'zh',
+  language_b: 'vi',
+  language_hints_strict: false,
 };
 
 class SettingsManager {

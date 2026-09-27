@@ -386,3 +386,9 @@ QA chạy "bài test người mới" ở tiêu chí nghiệm thu Commit E, thêm
 - Câu dịch mới nhất có class `.latest`: nền nhạt màu nhấn + vạch dọc bên trái (token `--latest-bg` / `--latest-bar` cho sáng và tối, chữ giữ màu cũ nên tương phản không đổi). Chuyển sang câu mới chỉ bỏ/thêm class ở 2 câu, không duyệt lịch sử.
 - Đang ở cuối: vẫn tự cuộn theo như cũ. Đã cuộn lên đọc lại: không giật màn hình; hiện nút nổi **"↓ N câu mới"**, bấm → cuộn mượt tới câu mới nhất (không mượt nếu bật giảm chuyển động); tự cuộn xuống cuối bằng tay cũng làm nút biến mất. Áp dụng cho cả một cột và hai cột.
 - Kiểm bằng jsdom (không commit). **QA trên Mac:** buổi dài (≥ 200 câu), sáng/tối, một cột/hai cột: câu mới nổi bật vừa đủ, không nhấp nháy; cuộn lên → nút hiện đúng số câu; bấm nút về đúng câu mới.
+
+### Soniox nhanh hơn + 5 cài đặt bị mất — đã làm (kỹ sư trưởng, 2026-09-27; tiêu chí của Kiên: "theo kịp giảng viên")
+
+- Đo `max_endpoint_delay_ms` trên 5 phút bài giảng thật (key thật, tốc độ thực): 1,5 s → bản dịch trễ 0,79 s trung vị, 90 % trong 1,0 s, lỗi 2,7 %; mặc định cũ 3 s → 1,51 s / 3,23 s, cùng lỗi; 0,5 s làm câu vụn và chậm hơn. Mặc định mới **1500** (Rust, JS, thanh trượt "Chờ chốt câu", đổi nhãn tiếng Việt).
+- Lỗi có sẵn: `endpoint_delay`, `translation_type`, `language_a`, `language_b`, `language_hints_strict` được form lưu nhưng **không có trong `Settings` (Rust)** nên serde bỏ đi mỗi lần lưu — thanh trượt và chế độ dịch hai chiều không bao giờ được nhớ. Đã thêm 5 trường (mặc định 1500 / one_way / zh / vi / false) + test round-trip.
+- QA trên Mac: chỉnh "Chờ chốt câu", thoát app, mở lại → giá trị còn; nghe một đoạn giảng thật, bản dịch phải theo sát lời nói (~1 s).

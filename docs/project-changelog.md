@@ -10,9 +10,14 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 ## Unreleased
 
 ### New
+- **Faster Soniox translation:** the translation now appears **~0.8 s** after the words are spoken (90 % within 1.0 s), half the previous lag, with the same accuracy — Soniox closes sentences after 1.5 s instead of 3 s (measured on a real lecture; adjustable in Settings › Engine dịch › *Chờ chốt câu*).
 - **Follow the lecture:** the newest translated sentence is softly highlighted. Scrolled up to re-read, the view no longer jumps; a **↓ N câu mới** (N new sentences) button takes you back to the newest one.
 
 ---
+
+### Fixed
+- Five Soniox settings were silently discarded on every save and reset on restart: sentence close delay, one-/two-way translation, the two-way language pair and strict language hints.
+
 
 ## v1.0.0 - 2026-09-26
 

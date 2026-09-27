@@ -33,7 +33,7 @@ A **real-time** speech translation app for macOS and Windows, tuned for **listen
 
 | Engine | Runs | Latency (speech → text on screen) | Cost | Notes |
 |---|---|---|---|---|
-| ☁️ **Soniox** `stt-rt-v5` (recommended) | cloud | live text **~1.3 s** (90 % within 2.1 s); translation **~1.7 s** (90 % within 3.0 s) — *measured* | **$0.12/hour**, translation included | 60+ languages; uses the course profile's **glossary** and context; most accurate on real lectures (3.0 % errors vs 11.4 % for Local) |
+| ☁️ **Soniox** `stt-rt-v5` (recommended) | cloud | live text **~1.3 s** (90 % within 2.1 s); translation **~0.8 s** (90 % within 1.0 s) with the default 1.5 s sentence close — *measured* | **$0.12/hour**, translation included | 60+ languages; uses the course profile's **glossary** and context; most accurate on real lectures (3.0 % errors vs 11.4 % for Local) |
 | 🖥️ **Local** (offline) | on device, pure Rust | appears **after each sentence**: **~1.0 s** on a MacBook Air M5 with Metal (0.35 s pause detection + ~0.2 s recognition + ~0.45 s translation), ~1.9 s on an x86 CPU — *measured* | **free** | X-ASR Zipformer (punctuation; the course glossary becomes hotwords) + Tencent Hy-MT2-1.8B (glossary in the prompt); no network or VPN needed |
 | ⚡ **OpenAI Realtime** `gpt-realtime-translate` | cloud | not measured here | **≈ $3.06/hour** ($0.034/min translation + $0.017/min `gpt-realtime-whisper` transcription) | translated voice output; needs a VPN in mainland China; no glossary |
 | 🌏 **Qwen LiveTranslate** (not recommended) | cloud (Alibaba, Singapore) | translation done **~0.8 s** after a sentence ends — *measured on Qwen3.8* | **≈ $5/hour** — *measured* from the service's own token counts on Qwen3.8 (≈ 40× Soniox) | reachable from mainland China without a VPN; accurate on terms but no glossary; kept in the app, not used. The app still speaks the legacy `qwen3-livetranslate-flash-realtime` protocol |
@@ -397,6 +397,15 @@ Streamed at real-time pace: 5 minutes of a real finance lecture (scored against 
 | Mainland China without VPN | no | yes | no |
 
 ¹ Qwen transcribes fillers (呃, 哈) that the subtitles leave out; on the term set it is close to Soniox. ² From the service's own usage counts (≈ 61 audio + 48 text-output tokens per second).
+
+How fast Soniox closes a sentence (`max_endpoint_delay_ms`, Settings › Engine dịch › *Chờ chốt câu*) drives the translation lag, since Soniox translates only finalized text. Same 5-minute real lecture, real-time pace:
+
+| Sentence close | Transcript errors | Translation lag (median / 90 %) | Sentences closed |
+|---|---|---|---|
+| 0.5 s | 4.0 % | 1.47 s / 4.23 s | 36 (chopped) |
+| 1.0 s | 3.6 % | 0.79 s / 1.06 s | 13 |
+| **1.5 s** (default) | **2.7 %** | **0.79 s / 1.00 s** | 7 |
+| 3.0 s (previous default) | 2.7 % | 1.51 s / 3.23 s | 6 |
 
 Decision: **Soniox stays the main engine** — most accurate, as fast as anything tested, and 20–40× cheaper. Qwen3.8 matches it on terms and speed but costs ≈ $5/hour, so it is not used. Gemini 3.5 is weaker on finance terms and slower, and always returns audio even when only text is requested; it is not integrated.
 
