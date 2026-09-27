@@ -34,7 +34,7 @@ A **real-time** speech translation app for macOS and Windows, tuned for **listen
 | Engine | Runs | Latency (speech → text on screen) | Cost | Notes |
 |---|---|---|---|---|
 | ☁️ **Soniox** `stt-rt-v5` (recommended) | cloud | live text **~1.3 s** (90 % within 2.1 s); translation **~0.8 s** (90 % within 1.0 s) with the default 1.5 s sentence close — *measured* | **$0.12/hour**, translation included | 60+ languages; uses the course profile's **glossary** and context; most accurate on real lectures (3.0 % errors vs 11.4 % for Local) |
-| 🖥️ **Local** (offline) | on device, pure Rust | appears **after each sentence**: **~1.0 s** on a MacBook Air M5 with Metal (0.35 s pause detection + ~0.2 s recognition + ~0.45 s translation), ~1.9 s on an x86 CPU — *measured* | **free** | X-ASR Zipformer (punctuation; the course glossary becomes hotwords) + Tencent Hy-MT2-1.8B (glossary in the prompt); no network or VPN needed |
+| 🖥️ **Local** (offline) | on device, pure Rust | works phrase by phrase: the Chinese shows as soon as a phrase is recognised and the Vietnamese streams in word by word, done **~1.0 s** after the phrase ends on a MacBook Air M5 with Metal (~1.9 s on an x86 CPU). In non-stop speech a phrase is closed at the first real pause after 4 s (8 s at most), so a word reaches the screen **~3.4 s** after it is spoken on average — *measured* | **free** | X-ASR Zipformer (punctuation; the course glossary becomes hotwords) + Tencent Hy-MT2-1.8B (glossary in the prompt); no network or VPN needed |
 | ⚡ **OpenAI Realtime** `gpt-realtime-translate` | cloud | not measured here | **≈ $3.06/hour** ($0.034/min translation + $0.017/min `gpt-realtime-whisper` transcription) | translated voice output; needs a VPN in mainland China; no glossary |
 | 🌏 **Qwen LiveTranslate** (not recommended) | cloud (Alibaba, Singapore) | translation done **~0.8 s** after a sentence ends — *measured on Qwen3.8* | **≈ $5/hour** — *measured* from the service's own token counts on Qwen3.8 (≈ 40× Soniox) | reachable from mainland China without a VPN; accurate on terms but no glossary; kept in the app, not used. The app still speaks the legacy `qwen3-livetranslate-flash-realtime` protocol |
 
@@ -209,7 +209,8 @@ Test environment variables:
 |---|---|
 | `MT_TEST_XASR_DIR` | extracted X-ASR folder (the app's `local-models/x-asr-zh-en-punct-int8` works) |
 | `MT_TEST_WAV` | 16 kHz mono s16le wav for the recognition test (default: first wav in `$MT_TEST_XASR_DIR/test_wavs`). On macOS: `say -v Tingting "…" -o zh.aiff && afconvert -f WAVE -d LEI16@16000 -c 1 zh.aiff zh.wav` |
-| `MT_TEST_VAD`, `MT_TEST_LONG_WAV` | Silero VAD model + a long noisy wav for `cargo test --release --test local_pipeline -- --ignored` (checks the 8–12 s utterance cut) |
+| `MT_TEST_VAD`, `MT_TEST_LONG_WAV` | Silero VAD model + a long noisy wav for `cargo test --release --test local_pipeline -- --ignored` (checks the 4–8 s utterance cut) |
+| `MT_TEST_LECTURE_WAV`, `MT_TEST_OUT`, `MT_TEST_TIMING`, `MT_TEST_CHUNK_MS` | latency probe `cargo test --release --test local_latency -- --ignored`: streams a lecture wav in real time through VAD → X-ASR → a stand-in translator and writes one JSON line per event; `MT_TEST_TIMING=min_silence,soft,hard,pause` in seconds |
 | `MT_TEST_GGUF` | GGUF file for the LLM test |
 | `MT_SETTINGS_DIR` | the app/tests read and write `settings.json` here instead of the real location, to test corrupt settings/`.bak` without touching yours |
 
@@ -353,7 +354,7 @@ FireRedASR2-AED is the most accurate but 15× slower and 5× the memory — it b
 | + GTCRN denoiser | 33.0 % | 15.4 % | 83.9 % |
 | + glossary hotwords (terms of ≥ 3 characters, score 2.0) | 14.9 % | 11.3 % | **99.3 %** (SenseVoice: 84.6 %) |
 
-Hence GTCRN and AGC are off by default (still available in Settings › Micro), and every glossary term of three or more Chinese characters becomes a hotword. Also found: under continuous babble, sherpa-onnx's VAD never reached its 8 s `max_speech_duration` cut (one 46 s segment — that much delay, and X-ASR aborts at ≥ 50 s); the pipeline now cuts an utterance itself at a quiet chunk after 8 s, at 12 s at the latest.
+Hence GTCRN and AGC are off by default (still available in Settings › Micro), and every glossary term of three or more Chinese characters becomes a hotword. Also found: under continuous babble, sherpa-onnx's VAD never reached its 8 s `max_speech_duration` cut (one 46 s segment — that much delay, and X-ASR aborts at ≥ 50 s); the pipeline now cuts an utterance itself (see *Keeping up with the lecturer* below).
 
 ### Apple Silicon end to end (MacBook Air M5)
 
@@ -370,6 +371,22 @@ Measured 2026-09-26 by QA on a MacBook Air M5 (10 cores, 16 GB, macOS 27): 72 s 
 | CPU while streaming | ~8 % on average (the LLM runs on the GPU) |
 | Stop → models released | ~50 ms |
 | Sentences with untranslated Chinese | **0/12** |
+
+### Keeping up with the lecturer (Local, 2026-09-27)
+
+Local translates whole phrases, so in non-stop speech a phrase's first words wait until it is closed. Measured on three 5-minute spans of a real finance lecture (the one in *Cloud live translation compared* below: minutes 5–10, 30–35 and 60–65, scored against its human subtitles), streamed in real time in 100 ms chunks through Silero VAD → X-ASR with a stand-in translator as slow as Hy-MT2 on an M5 (`tests/local_latency.rs`):
+
+| Phrase closing rule | Recognition errors | First word of a phrase on screen (median) | Average word on screen |
+|---|---|---|---|
+| 8 s, at the first quiet moment; 12 s at most (previous) | 11.3 % | 8.6 s after it is said | 4.6 s |
+| 8 s, at a ≥ 0.2 s pause; 12 s at most | **9.7 %** | 8.7 s | 4.9 s |
+| 5 s, at a ≥ 0.2 s pause; 8 s at most | 10.9 % | 5.9 s | 3.6 s |
+| 5 s, at a ≥ 0.3 s pause; 10 s at most | 9.9 % | 6.1 s | 4.0 s |
+| **4 s, at a ≥ 0.3 s pause; 8 s at most** (default) | 10.1 % | **5.1 s** | **3.4 s** |
+
+Cutting shorter by itself costs accuracy (a plain 4 s / 6 s cut: 14.9 % on the first span, against 13.4 % for the previous rule), because a cut can land inside a word. Waiting for a real pause fixes that, which is why the default is both faster and more accurate than before. The pause is measured on fixed 50 ms frames, so it does not depend on the capture batch size.
+
+Two further changes remove waiting without touching accuracy: the Chinese phrase is shown the moment it is recognised (dual view), and the translation streams in word by word — on an x86 CPU its first words appeared 0.25–0.36 s after recognition against 0.9–1.2 s for the whole sentence; every partial is a prefix of the final translation, which replaces it. Audio now reaches the engines in 100 ms batches instead of 200 ms: for Soniox that cut the translation lag from 0.96 s to 0.90 s (median; 90 % within 1.08 s instead of 1.20 s) with the same accuracy.
 
 ### Cloud reference: Soniox (measured with a real key, same audio)
 

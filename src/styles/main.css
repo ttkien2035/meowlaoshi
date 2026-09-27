@@ -714,6 +714,12 @@ body {
   font-style: italic;
 }
 
+/* Translation still being produced (Local streams words; "..." before that) */
+.dual-view .panel-translation .seg-text.pending {
+  color: rgba(var(--fg-rgb), 0.55);
+  font-style: italic;
+}
+
 /* Hide original text in seg-block when dual view (content rendered in panels) */
 .dual-view .seg-block {
   display: none;

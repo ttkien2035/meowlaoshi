@@ -33,13 +33,13 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 
 const QWEN_REALTIME_BASE: &str = "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime";
 const QWEN_DEFAULT_MODEL: &str = "qwen3-livetranslate-flash-realtime";
-/// Bounded audio queue: 200 ms chunks → ~10 s of backlog before we drop.
-const AUDIO_QUEUE_CHUNKS: usize = 50;
-/// Capture batches are 200 ms; the server processes faster than real time, so
+/// Bounded audio queue: 100 ms chunks → ~10 s of backlog before we drop.
+const AUDIO_QUEUE_CHUNKS: usize = 100;
+/// Capture batches are 100 ms; the server processes faster than real time, so
 /// a short backlog is caught up naturally. Past 5 s we skip ahead to 2 s.
-const CHUNK_SECS: f32 = 0.2;
-const BACKLOG_SKIP_ABOVE: usize = 25;
-const BACKLOG_KEEP: usize = 10;
+const CHUNK_SECS: f32 = 0.1;
+const BACKLOG_SKIP_ABOVE: usize = 50;
+const BACKLOG_KEEP: usize = 20;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// WS URL for `model`; falls back to the default when empty. Model ids are

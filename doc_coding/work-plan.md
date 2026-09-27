@@ -392,3 +392,23 @@ QA chạy "bài test người mới" ở tiêu chí nghiệm thu Commit E, thêm
 - Đo `max_endpoint_delay_ms` trên 5 phút bài giảng thật (key thật, tốc độ thực): 1,5 s → bản dịch trễ 0,79 s trung vị, 90 % trong 1,0 s, lỗi 2,7 %; mặc định cũ 3 s → 1,51 s / 3,23 s, cùng lỗi; 0,5 s làm câu vụn và chậm hơn. Mặc định mới **1500** (Rust, JS, thanh trượt "Chờ chốt câu", đổi nhãn tiếng Việt).
 - Lỗi có sẵn: `endpoint_delay`, `translation_type`, `language_a`, `language_b`, `language_hints_strict` được form lưu nhưng **không có trong `Settings` (Rust)** nên serde bỏ đi mỗi lần lưu — thanh trượt và chế độ dịch hai chiều không bao giờ được nhớ. Đã thêm 5 trường (mặc định 1500 / one_way / zh / vi / false) + test round-trip.
 - QA trên Mac: chỉnh "Chờ chốt câu", thoát app, mở lại → giá trị còn; nghe một đoạn giảng thật, bản dịch phải theo sát lời nói (~1 s).
+
+### Local theo kịp giảng viên + âm thanh 100 ms — đã làm (kỹ sư trưởng, 2026-09-27; tiêu chí của Kiên: "theo kịp giảng viên" nhưng "phải đảm bảo độ chính xác")
+
+- Chẩn đoán: Local chỉ dịch khi cụm câu kết thúc; giảng viên nói liền thì cụm bị cắt ở mốc 8 s (tối đa 12 s), nên chữ đầu cụm hiện sau ~8,6 s.
+- Đo bằng `tests/local_latency.rs` (mới, ignored): 3 đoạn × 5 phút bài giảng thật, thời gian thực, khối 100 ms, bộ dịch giả lập chậm như Hy-MT2 trên M5; chấm lỗi theo phụ đề.
+  - Cắt ngắn đơn thuần làm tăng lỗi (4 s / 6 s: 14,9 % so với 13,4 %).
+  - Bộ cắt mới chỉ cắt ở chỗ ngừng thật sự, đo trên khung cố định 50 ms, không phụ thuộc cỡ khối.
+  - Mặc định mới `Timing { min_silence 0,35, soft 4 s, hard 8 s, pause 0,3 s }`: lỗi **10,1 %** (cũ 11,3 %), chữ đầu cụm **5,1 s** (cũ 8,6 s), trung bình một chữ 3,4 s (cũ 4,6 s).
+- Sự kiện mới:
+  - `transcript { src, start_ms, end_ms }` ngay sau ASR (chữ Trung hiện ngay);
+  - `partial { tgt, start_ms }`: LLM báo bản dịch dở theo từ trọn vẹn, chữ đầu gửi ngay, sau đó tối đa mỗi 120 ms;
+  - `result` có thêm `start_ms` / `end_ms`.
+  - UI ghép theo khoá `start_ms`, nên câu bị bỏ khi tồn đọng không làm lệch cặp. Kiểm bằng jsdom.
+  - Test Hy-MT2 thật (CPU): bản dịch dở luôn là phần đầu của bản cuối, cắt đúng ranh giới từ; chữ đầu hiện sau 0,25–0,36 s so với 0,9–1,2 s cả câu.
+- Âm thanh gom 100 ms thay vì 200 ms (hàng đợi Local / OpenAI / Qwen tăng số khối để giữ ~10 s). Soniox đo lại bằng key thật: trễ bản dịch 0,96 → 0,90 s trung vị (p90 1,20 → 1,08 s), lỗi như cũ.
+- **QA trên Mac (Local):**
+  - một cột: chữ Việt hiện dần rồi được bản cuối thay, không nhấp nháy;
+  - hai cột: chữ Trung hiện trước, cột dịch "..." rồi chữ dần;
+  - giảng liền mạch: câu ra đều đặn mỗi ~4–8 s;
+  - không có toast "Bỏ qua N câu" trong buổi bình thường.

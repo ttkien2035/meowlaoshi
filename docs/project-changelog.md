@@ -11,6 +11,8 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ### New
 - **Faster Soniox translation:** the translation now appears **~0.8 s** after the words are spoken (90 % within 1.0 s), half the previous lag, with the same accuracy — Soniox closes sentences after 1.5 s instead of 3 s (measured on a real lecture; adjustable in Settings › Engine dịch › *Chờ chốt câu*).
+- **Local keeps up with the lecturer:** in non-stop speech the first words of a phrase now appear **~3.5 s sooner** (5.1 s instead of 8.6 s after they are said), and recognition is slightly more accurate (10.1 % instead of 11.3 % errors on a real lecture): phrases are closed at a real pause after 4 s (8 s at most) instead of at the first quiet moment after 8 s. The Chinese shows the moment it is recognised, and the Vietnamese appears word by word while it is being translated.
+- **Audio reaches the engines every 100 ms** instead of 200 ms (Soniox translation ~0.06 s sooner).
 - **Follow the lecture:** the newest translated sentence is softly highlighted. Scrolled up to re-read, the view no longer jumps; a **↓ N câu mới** (N new sentences) button takes you back to the newest one.
 
 ---

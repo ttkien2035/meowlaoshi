@@ -110,8 +110,12 @@ export class TranscriptUI {
         }
     }
 
-    /** Add finalized original text (pending translation). */
-    addOriginal(text, speaker, language) {
+    /**
+     * Add finalized original text (pending translation). `key` lets the
+     * engine pair the translation with this exact segment later
+     * (`addTranslation(text, { key })`) instead of "the oldest pending one".
+     */
+    addOriginal(text, speaker, language, key) {
         this._removeListening();
         this._noteScroll();
         const seg = {
@@ -123,6 +127,7 @@ export class TranscriptUI {
             confidence: this.lastConfidence,
             createdAt: Date.now(),
             nodes: null,
+            key: key ?? null,
         };
         this._mount(seg);
         this.segments.push(seg);
@@ -134,15 +139,20 @@ export class TranscriptUI {
         this._queue();
     }
 
-    /** Apply a translation to the oldest untranslated segment (or add a new one). */
-    addTranslation(text) {
+    /**
+     * Apply a translation to the oldest untranslated segment (or add a new one).
+     * With `{ key, original }` it goes to the pending segment added under that
+     * key; if that one is gone (trimmed as stale) a new segment carrying
+     * `original` is added, so a translation never lands on the wrong sentence.
+     */
+    addTranslation(text, { key, original } = {}) {
         this._noteScroll();
-        let seg = this._oldestPending();
+        let seg = key !== undefined && key !== null ? this._pendingByKey(key) : this._oldestPending();
         if (seg) {
             this._pending--;
         } else {
             seg = {
-                original: '',
+                original: original || '',
                 translation: null,
                 status: 'original',
                 speaker: null,
@@ -150,10 +160,12 @@ export class TranscriptUI {
                 confidence: null,
                 createdAt: Date.now(),
                 nodes: null,
+                key: null,
             };
             this._mount(seg);
             this.segments.push(seg);
         }
+        if (key !== undefined && key !== null && this._partialKey === key) this._clearPartial();
         seg.translation = text;
         seg.status = 'translated';
         this._paintTranslation(seg);
@@ -221,6 +233,28 @@ export class TranscriptUI {
                 return;
             }
         }
+    }
+
+    /**
+     * Translation so far of the pending segment `key` (Local: the LLM streams
+     * words). Dual view: replaces that segment's "..."; single view: shown in
+     * the provisional block until the final translation arrives.
+     */
+    setPartial(key, text) {
+        const seg = this._pendingByKey(key);
+        if (!seg || !text) return;
+        this._removeListening();
+        this._noteScroll();
+        this._partialKey = key;
+        if (seg.nodes && seg.nodes.tgtText.textContent !== text) seg.nodes.tgtText.textContent = text;
+        this.provisionalText = text;
+        this._queue();
+    }
+
+    _clearPartial() {
+        this._partialKey = null;
+        this.provisionalText = '';
+        this._queue();
     }
 
     /** Update provisional (in-progress) text. */
@@ -495,8 +529,10 @@ export class TranscriptUI {
         const srcProv = this.sourceProvisionalText;
 
         // Single column. OpenAI's provisionalText is the target stream when a
-        // source stream exists; Qwen is target-only; Soniox's is source ASR.
-        const targetStream = !!srcProv || this._provider === 'qwen';
+        // source stream exists; Qwen is target-only; Local's is the partial
+        // translation (setPartial); Soniox's is source ASR.
+        const local = this._provider === 'local';
+        const targetStream = !!srcProv || this._provider === 'qwen' || local;
         p.block.hidden = !text;
         if (text) {
             const cls = targetStream ? 'seg-translated' : 'seg-provisional';
@@ -515,11 +551,12 @@ export class TranscriptUI {
         }
 
         // Dual. OpenAI: source = sourceProvisionalText, target = provisionalText.
-        // Soniox: source = provisionalText, target "...".
+        // Soniox: source = provisionalText, target "...". Local paints its
+        // partial into the pending segment itself, so no provisional rows.
         const usingOpenAi = this._provider === 'openai';
-        const srcText = usingOpenAi ? srcProv : text;
+        const srcText = local ? '' : usingOpenAi ? srcProv : text;
         const tgtText = usingOpenAi ? text : '';
-        const any = !!(srcProv || text);
+        const any = !local && !!(srcProv || text);
         p.src.hidden = !srcText;
         if (srcText && p.src.textContent !== srcText) p.src.textContent = srcText;
         p.tgt.hidden = !any;
@@ -544,6 +581,18 @@ export class TranscriptUI {
             if (seg.status === 'original') this._pending--;
             this._unmount(seg);
         }
+    }
+
+    /** The pending segment added under `key`, walking back over the pending tail. */
+    _pendingByKey(key) {
+        let seen = 0;
+        for (let i = this.segments.length - 1; i >= 0 && seen < this._pending; i--) {
+            const seg = this.segments[i];
+            if (seg.status !== 'original') continue;
+            seen++;
+            if (seg.key === key) return seg;
+        }
+        return null;
     }
 
     /** Oldest untranslated segment, found by walking back over the pending tail. */
@@ -589,6 +638,7 @@ export class TranscriptUI {
         this.provisionalSpeaker = null;
         this.provisionalLanguage = null;
         this.sourceProvisionalText = '';
+        this._partialKey = null;
         this.currentSpeaker = null;
         this.currentLanguage = null;
         this.lastConfidence = null;

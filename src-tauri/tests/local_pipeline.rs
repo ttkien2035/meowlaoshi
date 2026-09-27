@@ -14,7 +14,7 @@ use my_translator_lib::test_api::*;
 
 struct Echo;
 impl Translator for Echo {
-    fn translate(&self, req: &TranslateRequest, _cancel: &AtomicBool) -> Result<String, String> {
+    fn translate(&self, req: &TranslateRequest, _cancel: &AtomicBool, _partial: &mut dyn FnMut(&str)) -> Result<String, String> {
         Ok(req.text.to_string())
     }
 }
@@ -58,6 +58,7 @@ fn long_speech_is_cut_into_short_utterances() {
         source_lang_name: "Chinese".into(),
         target_lang_name: "Vietnamese".into(),
         glossary: vec![("资产负债表".into(), "bảng cân đối kế toán".into())],
+        timing: Default::default(),
     };
     let factory: TranslatorFactory = Box::new(|| Ok(Box::new(Echo) as Box<dyn Translator>));
     let mut session = start_with_translator(cfg, sink, factory).expect("start");

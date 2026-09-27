@@ -32,7 +32,7 @@
 | Engine | Chạy ở đâu | Độ trễ (từ lúc nói → chữ hiện) | Chi phí | Ghi chú |
 |---|---|---|---|---|
 | ☁️ **Soniox** `stt-rt-v5` (khuyên dùng) | cloud | chữ tạm **~1,3 s** (90 % trong 2,1 s); bản dịch **~0,8 s** (90 % trong 1,0 s) với mức chờ chốt câu mặc định 1,5 s — *đã đo* | **$0,12/giờ**, đã gồm dịch | 60+ ngôn ngữ; nhận **từ điển thuật ngữ** và ngữ cảnh của hồ sơ môn học; chính xác nhất trên bài giảng thật (lỗi 3,0 % so với 11,4 % của Local) |
-| 🖥️ **Local** (offline) | trên máy, thuần Rust | hiện **sau khi hết mỗi câu**: **~1,0 s** trên MacBook Air M5 dùng Metal (0,35 s nhận biết ngắt câu + ~0,2 s nhận dạng + ~0,45 s dịch), ~1,9 s trên CPU x86 — *đã đo* | **miễn phí** | X-ASR Zipformer (có dấu câu; từ điển môn học thành hotword) + Hy-MT2-1.8B của Tencent (từ điển đưa vào prompt); không cần mạng hay VPN |
+| 🖥️ **Local** (offline) | trên máy, thuần Rust | chạy theo từng cụm câu: chữ Trung hiện ngay khi nhận dạng xong, bản dịch tiếng Việt hiện dần từng chữ, xong **~1,0 s** sau khi hết cụm trên MacBook Air M5 dùng Metal (~1,9 s trên CPU x86). Khi giảng viên nói liền mạch, cụm được chốt ở chỗ ngừng thật sự đầu tiên sau 4 s (chậm nhất 8 s), nên trung bình một chữ lên màn hình **~3,4 s** sau khi được nói — *đã đo* | **miễn phí** | X-ASR Zipformer (có dấu câu; từ điển môn học thành hotword) + Hy-MT2-1.8B của Tencent (từ điển đưa vào prompt); không cần mạng hay VPN |
 | ⚡ **OpenAI Realtime** `gpt-realtime-translate` | cloud | chưa đo | **≈ $3,06/giờ** ($0,034/phút dịch + $0,017/phút nhận dạng `gpt-realtime-whisper`) | có giọng nói dịch; ở Trung Quốc đại lục cần VPN; không dùng được từ điển |
 | 🌏 **Qwen LiveTranslate** (không khuyên dùng) | cloud (Alibaba, Singapore) | dịch xong **~0,8 s** sau khi hết câu — *đã đo trên Qwen3.8* | **≈ $5/giờ** — *đã đo* từ số token dịch vụ báo lại trên Qwen3.8 (≈ 40 lần Soniox) | vào được từ Trung Quốc không cần VPN; nhận thuật ngữ tốt nhưng không dùng được từ điển; vẫn có trong app nhưng không dùng. App vẫn dùng giao thức của model cũ `qwen3-livetranslate-flash-realtime` |
 
@@ -197,7 +197,8 @@ Biến môi trường cho kiểm thử:
 |---|---|
 | `MT_TEST_XASR_DIR` | thư mục X-ASR đã giải nén (dùng luôn `local-models/x-asr-zh-en-punct-int8` của app được) |
 | `MT_TEST_WAV` | wav 16 kHz mono s16le cho test nhận dạng (mặc định: wav đầu tiên trong `$MT_TEST_XASR_DIR/test_wavs`). Trên macOS: `say -v Tingting "…" -o zh.aiff && afconvert -f WAVE -d LEI16@16000 -c 1 zh.aiff zh.wav` |
-| `MT_TEST_VAD`, `MT_TEST_LONG_WAV` | model Silero VAD + một wav dài có ồn cho `cargo test --release --test local_pipeline -- --ignored` (kiểm ngắt câu 8–12 s) |
+| `MT_TEST_VAD`, `MT_TEST_LONG_WAV` | model Silero VAD + một wav dài có ồn cho `cargo test --release --test local_pipeline -- --ignored` (kiểm ngắt câu 4–8 s) |
+| `MT_TEST_LECTURE_WAV`, `MT_TEST_OUT`, `MT_TEST_TIMING`, `MT_TEST_CHUNK_MS` | đo độ trễ `cargo test --release --test local_latency -- --ignored`: phát một wav bài giảng theo thời gian thực qua VAD → X-ASR → bộ dịch giả lập, ghi mỗi sự kiện một dòng JSON; `MT_TEST_TIMING=min_silence,soft,hard,pause` tính bằng giây |
 | `MT_TEST_GGUF` | file GGUF cho test LLM |
 | `MT_SETTINGS_DIR` | app/test đọc-ghi `settings.json` trong thư mục này thay vì thư mục thật — thử settings hỏng/`.bak` mà không đụng cài đặt của bạn |
 
@@ -336,7 +337,7 @@ FireRedASR2-AED chính xác nhất nhưng chậm gấp 15 lần và tốn RAM g�
 | + khử ồn GTCRN | 33,0 % | 15,4 % | 83,9 % |
 | + hotword từ từ điển (từ ≥ 3 chữ Hán, điểm 2,0) | 14,9 % | 11,3 % | **99,3 %** (SenseVoice: 84,6 %) |
 
-Vì vậy GTCRN và AGC tắt mặc định (vẫn bật được trong Cài đặt › Micro), và mọi thuật ngữ từ 3 chữ Hán trở lên trong từ điển trở thành hotword. Phát hiện thêm: khi tiếng ồn liên tục, VAD của sherpa-onnx không bao giờ ngắt ở mốc 8 s `max_speech_duration` (có đoạn 46 s — dịch trễ bấy nhiêu, và X-ASR sập từ 50 s); pipeline nay tự ngắt câu ở chỗ lặng sau 8 s, chậm nhất là 12 s.
+Vì vậy GTCRN và AGC tắt mặc định (vẫn bật được trong Cài đặt › Micro), và mọi thuật ngữ từ 3 chữ Hán trở lên trong từ điển trở thành hotword. Phát hiện thêm: khi tiếng ồn liên tục, VAD của sherpa-onnx không bao giờ ngắt ở mốc 8 s `max_speech_duration` (có đoạn 46 s — dịch trễ bấy nhiêu, và X-ASR sập từ 50 s); pipeline nay tự ngắt câu (xem *Theo kịp giảng viên* bên dưới).
 
 ### Đo trọn luồng trên chip Apple (MacBook Air M5)
 
@@ -353,6 +354,22 @@ QA đo ngày 26-09-2026 trên MacBook Air M5 (10 nhân, 16 GB, macOS 27): 72 s a
 | CPU khi đang chạy | trung bình ~8 % (LLM chạy trên GPU) |
 | Dừng → giải phóng model | ~50 ms |
 | Câu còn sót chữ Hán | **0/12** |
+
+### Theo kịp giảng viên (Local, 27-09-2026)
+
+Local dịch theo cả cụm câu, nên khi giảng viên nói liền, những chữ đầu cụm phải chờ tới lúc cụm được chốt. Đo trên ba đoạn 5 phút của một bài giảng tài chính thật (bài dùng trong *So sánh dịch vụ dịch trực tiếp trên cloud* bên dưới: phút 5–10, 30–35 và 60–65, chấm theo phụ đề người làm), phát theo thời gian thực từng khối 100 ms qua Silero VAD → X-ASR với bộ dịch giả lập chậm như Hy-MT2 trên M5 (`tests/local_latency.rs`):
+
+| Cách chốt cụm câu | Lỗi nhận dạng | Chữ đầu cụm lên màn hình (trung vị) | Trung bình một chữ |
+|---|---|---|---|
+| 8 s, ở khoảnh khắc nhỏ tiếng đầu tiên; tối đa 12 s (trước đây) | 11,3 % | 8,6 s sau khi nói | 4,6 s |
+| 8 s, ở chỗ ngừng ≥ 0,2 s; tối đa 12 s | **9,7 %** | 8,7 s | 4,9 s |
+| 5 s, ở chỗ ngừng ≥ 0,2 s; tối đa 8 s | 10,9 % | 5,9 s | 3,6 s |
+| 5 s, ở chỗ ngừng ≥ 0,3 s; tối đa 10 s | 9,9 % | 6,1 s | 4,0 s |
+| **4 s, ở chỗ ngừng ≥ 0,3 s; tối đa 8 s** (mặc định) | 10,1 % | **5,1 s** | **3,4 s** |
+
+Chỉ cắt ngắn hơn thì mất độ chính xác (cắt thẳng 4 s / 6 s: 14,9 % trên đoạn đầu, so với 13,4 % của cách cũ) vì chỗ cắt có thể rơi giữa một từ. Chờ một chỗ ngừng thật sự khắc phục điều đó, nên mặc định mới vừa nhanh hơn vừa chính xác hơn trước. Chỗ ngừng được đo trên khung cố định 50 ms, không phụ thuộc cỡ khối thu âm.
+
+Thêm hai thay đổi bớt thời gian chờ mà không đụng tới độ chính xác: cụm tiếng Trung hiện ngay khi nhận dạng xong (chế độ song ngữ), và bản dịch hiện dần từng chữ — trên CPU x86, những chữ đầu hiện sau 0,25–0,36 s kể từ khi nhận dạng xong, so với 0,9–1,2 s cho cả câu; bản dịch dở luôn là phần đầu của bản cuối, và bản cuối sẽ thay nó. Âm thanh nay tới engine theo khối 100 ms thay vì 200 ms: với Soniox, độ trễ bản dịch giảm từ 0,96 s xuống 0,90 s (trung vị; 90 % trong 1,08 s thay vì 1,20 s), độ chính xác như cũ.
 
 ### Mốc tham chiếu cloud: Soniox (đo bằng key thật, cùng audio)
 

@@ -92,6 +92,7 @@ pub async fn local_start(
                 .filter(|g| !g.source.trim().is_empty() && !g.target.trim().is_empty())
                 .map(|g| (g.source.trim().to_string(), g.target.trim().to_string()))
                 .collect(),
+            timing: Default::default(),
         },
         Box::new(move |event| {
             let _ = on_event.send(event);

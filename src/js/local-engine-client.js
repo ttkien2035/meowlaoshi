@@ -11,8 +11,10 @@ export class LocalEngineClient {
         this.channel = null;
         this.isConnected = false;
 
-        this.onStatus = () => {};   // (state, message)
-        this.onResult = () => {};   // (src, tgt)
+        this.onStatus = () => {};     // (state, message)
+        this.onTranscript = () => {}; // (src, startMs, endMs) — recognised, translation pending
+        this.onPartial = () => {};    // (tgt, startMs) — translation so far, whole words
+        this.onResult = () => {};     // (src, tgt, startMs, endMs)
         this.onError = () => {};    // (code, message)
         this.onClosed = () => {};   // (reason)
     }
@@ -61,8 +63,14 @@ export class LocalEngineClient {
             case 'status':
                 this.onStatus(evt.state, evt.message);
                 break;
+            case 'transcript':
+                this.onTranscript(evt.src, evt.start_ms, evt.end_ms);
+                break;
+            case 'partial':
+                this.onPartial(evt.tgt, evt.start_ms);
+                break;
             case 'result':
-                this.onResult(evt.src, evt.tgt);
+                this.onResult(evt.src, evt.tgt, evt.start_ms, evt.end_ms);
                 break;
             case 'error':
                 this.onError(evt.code, evt.message);

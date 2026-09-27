@@ -23,7 +23,7 @@ pub mod test_api {
     /// `bpe.vocab` writer the hotword encoder needs.
     pub use crate::local::models::{ensure_bpe_vocab, AsrFiles};
     pub use crate::local::pipeline::{
-        start_with_sink, start_with_translator, LocalEvent, Session, SessionConfig, Translator,
+        start_with_sink, start_with_translator, LocalEvent, Session, SessionConfig, Timing, Translator,
         TranslatorFactory, UTTERANCE_QUEUE_MAX,
     };
     /// P3 — settings load/save; point `MT_SETTINGS_DIR` at a scratch dir first.

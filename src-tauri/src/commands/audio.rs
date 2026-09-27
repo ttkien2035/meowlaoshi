@@ -73,9 +73,12 @@ pub fn start_capture(
     let stop_flag_clone = stop_flag.clone();
 
     std::thread::spawn(move || {
-        // 200 ms of 16 kHz s16le mono is 6400 B; headroom so a batch never grows.
+        // 100 ms batches: every engine sees speech 100 ms sooner than with
+        // 200 ms, and Local's cutter reacts at finer steps; 10 IPC sends/s is
+        // cheap. 100 ms of 16 kHz s16le mono is 3200 B; headroom so a batch
+        // never grows.
         const BATCH_CAP: usize = 8192;
-        let batch_interval = std::time::Duration::from_millis(200);
+        let batch_interval = std::time::Duration::from_millis(100);
         let mut buffer: Vec<u8> = Vec::with_capacity(BATCH_CAP);
         let mut last_flush = std::time::Instant::now();
 

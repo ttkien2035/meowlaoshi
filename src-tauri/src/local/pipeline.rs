@@ -26,8 +26,8 @@ use super::asr::Asr;
 use super::llm::{Llm, TranslateRequest};
 use super::models::AsrFiles;
 
-/// Audio queue depth (200 ms capture batches): ~10 s before frames are dropped.
-const AUDIO_QUEUE_CHUNKS: usize = 50;
+/// Audio queue depth (100 ms capture batches): ~10 s before frames are dropped.
+const AUDIO_QUEUE_CHUNKS: usize = 100;
 /// Utterances waiting for the LLM; beyond this the oldest is skipped.
 pub const UTTERANCE_QUEUE_MAX: usize = 4;
 const SAMPLE_RATE: u32 = 16_000;
@@ -39,17 +39,60 @@ const MIN_SEGMENT_DBFS: f32 = -45.0;
 /// the previous utterance, so no tail of it leaks in.
 const PRE_ROLL_SAMPLES: usize = SAMPLE_RATE as usize * 3 / 10;
 /// Recent audio kept for pre-roll: a segment's start lies at most
-/// HARD_CUT (12 s) + min_silence (0.35 s) behind the newest sample.
+/// hard cut + min_silence behind the newest sample (`Timing` keeps the hard
+/// cut ≤ 14 s so this always holds).
 const HISTORY_SAMPLES: usize = SAMPLE_RATE as usize * 16;
-/// sherpa's `max_speech_duration` only relaxes the end-of-speech rule (a
-/// shorter pause then suffices); under continuous babble — a classroom —
-/// a segment kept growing for 46 s in tests: that much translation delay,
-/// and X-ASR's graph fails at ≥ 50 s. So the pipeline cuts on its own: at a
-/// quiet capture chunk once SOFT_CUT is reached, unconditionally at HARD_CUT.
-const SOFT_CUT_SAMPLES: u64 = SAMPLE_RATE as u64 * 8;
-const HARD_CUT_SAMPLES: u64 = SAMPLE_RATE as u64 * 12;
-/// A capture chunk this far below the utterance's loudest chunk is a pause.
+const MAX_HARD_CUT_S: f32 = 14.0;
+/// A 50 ms frame this far below the utterance's loudest frame is quiet.
 const CUT_QUIET_DB: f32 = 15.0;
+/// Level frames for the cutter: fixed, so pauses are measured the same
+/// whatever the capture batch size.
+const CUT_FRAME: usize = SAMPLE_RATE as usize / 20;
+
+/// When an utterance ends — and so how soon it is translated.
+///
+/// Local translates whole utterances, so under continuous speech the first
+/// words of a sentence wait for the cut. sherpa's `max_speech_duration` only
+/// relaxes the end-of-speech rule (under classroom babble a segment grew to
+/// 46 s, and X-ASR fails at ≥ 50 s), so the pipeline cuts on its own: at a
+/// pause of at least `pause_s` once past `soft_cut_s`, unconditionally at
+/// `hard_cut_s`. Cutting mid-phrase costs accuracy (the recogniser loses
+/// context, a word can straddle the cut), so the pause must be a real one.
+#[derive(Clone, Copy, Debug)]
+pub struct Timing {
+    /// Pause that ends an utterance (Silero `min_silence_duration`).
+    pub min_silence_s: f32,
+    pub soft_cut_s: f32,
+    pub hard_cut_s: f32,
+    /// Shortest quiet stretch the soft cut accepts.
+    pub pause_s: f32,
+}
+
+impl Default for Timing {
+    fn default() -> Self {
+        // Measured on three 5-minute spans of a real lecture streamed in real
+        // time (tests/local_latency.rs, 2026-09-27). Against the former rule
+        // (8 s / 12 s, cut at the first quiet chunk), 4 s / 8 s with a
+        // ≥ 0.3 s pause shows a sentence's first word 5.1 s after it was said
+        // instead of 8.6 s (median) and recognises better (10.1 % vs 11.3 %
+        // character errors): it cuts in real pauses, not inside words.
+        // 8 s / 12 s with a pause is a little more accurate still (9.7 %) but
+        // as slow as before.
+        Self { min_silence_s: 0.35, soft_cut_s: 4.0, hard_cut_s: 8.0, pause_s: 0.3 }
+    }
+}
+
+impl Timing {
+    fn soft_samples(&self) -> u64 {
+        (self.soft_cut_s.clamp(1.0, MAX_HARD_CUT_S) * SAMPLE_RATE as f32) as u64
+    }
+    fn pause_samples(&self) -> u64 {
+        (self.pause_s.clamp(0.0, 1.0) * SAMPLE_RATE as f32) as u64
+    }
+    fn hard_samples(&self) -> u64 {
+        (self.hard_cut_s.clamp(self.soft_cut_s.max(1.0), MAX_HARD_CUT_S) * SAMPLE_RATE as f32) as u64
+    }
+}
 
 /// Ring of the most recent input samples, indexed by absolute sample number
 /// (the same numbering VAD uses for `SpeechSegment::start`).
@@ -90,7 +133,14 @@ impl History {
 pub enum LocalEvent {
     /// `state`: "loading" | "asr_ready" | "ready" | "backlog_skipped"
     Status { state: String, message: Option<String> },
-    Result { src: String, tgt: String },
+    /// Recognised text, sent as soon as ASR is done (before translation), so
+    /// the source sentence shows while the LLM works. `*_ms`: position in
+    /// the session's audio.
+    Transcript { src: String, start_ms: u64, end_ms: u64 },
+    /// Translation so far of the utterance starting at `start_ms` (whole
+    /// words); the `Result` with the same `start_ms` replaces it.
+    Partial { tgt: String, start_ms: u64 },
+    Result { src: String, tgt: String, start_ms: u64, end_ms: u64 },
     Error { code: String, message: String },
     Closed { reason: String },
 }
@@ -101,12 +151,14 @@ pub type EventSink = Arc<dyn Fn(LocalEvent) + Send + Sync>;
 /// Translation backend. `Llm` in the app; tests substitute a stub (e.g. one
 /// that sleeps to exercise the backlog path) through `start_with_translator`.
 pub trait Translator: Send {
-    fn translate(&self, req: &TranslateRequest, cancel: &AtomicBool) -> Result<String, String>;
+    /// `partial` may be called with the translation so far (whole words) while
+    /// it is generated; the returned string is the final one.
+    fn translate(&self, req: &TranslateRequest, cancel: &AtomicBool, partial: &mut dyn FnMut(&str)) -> Result<String, String>;
 }
 
 impl Translator for Llm {
-    fn translate(&self, req: &TranslateRequest, cancel: &AtomicBool) -> Result<String, String> {
-        Llm::translate(self, req, cancel)
+    fn translate(&self, req: &TranslateRequest, cancel: &AtomicBool, partial: &mut dyn FnMut(&str)) -> Result<String, String> {
+        Llm::translate(self, req, cancel, partial)
     }
 }
 
@@ -124,11 +176,19 @@ pub struct SessionConfig {
     /// Course glossary (source → target). Sources become ASR hotwords;
     /// pairs found in a sentence go into that sentence's prompt.
     pub glossary: Vec<(String, String)>,
+    pub timing: Timing,
+}
+
+/// A recognised utterance waiting for translation.
+struct Utterance {
+    text: String,
+    start_ms: u64,
+    end_ms: u64,
 }
 
 /// Drop-oldest queue of recognised utterances between the two workers.
 struct UtteranceQueue {
-    inner: Mutex<(VecDeque<String>, bool)>, // (items, producer done)
+    inner: Mutex<(VecDeque<Utterance>, bool)>, // (items, producer done)
     cv: Condvar,
 }
 
@@ -142,9 +202,9 @@ impl UtteranceQueue {
 
     /// Push; returns how many older items were dropped to stay within bounds.
     /// The newest item is never the one dropped.
-    fn push(&self, text: String) -> usize {
+    fn push(&self, u: Utterance) -> usize {
         let mut g = self.inner.lock().unwrap_or_else(|p| p.into_inner());
-        g.0.push_back(text);
+        g.0.push_back(u);
         let mut dropped = 0;
         while g.0.len() > UTTERANCE_QUEUE_MAX {
             g.0.pop_front();
@@ -161,7 +221,7 @@ impl UtteranceQueue {
     }
 
     /// Blocks until an item is available; `None` once finished and drained.
-    fn pop(&self) -> Option<String> {
+    fn pop(&self) -> Option<Utterance> {
         let mut g = self.inner.lock().unwrap_or_else(|p| p.into_inner());
         loop {
             if let Some(t) = g.0.pop_front() {
@@ -279,25 +339,52 @@ fn status(sink: &EventSink, state: &str, message: impl Into<Option<String>>) {
     });
 }
 
-/// Utterance length guard (see `SOFT_CUT_SAMPLES`): tracks how long VAD has
-/// been inside speech and the loudest capture chunk so far.
-#[derive(Default)]
+/// Utterance length guard (see `Timing`): tracks how long VAD has been
+/// inside speech, the loudest 50 ms frame so far, and how long the audio has
+/// been quiet up to the newest sample.
 struct Cutter {
     /// Absolute sample index when speech was first seen (None outside speech).
     started: Option<u64>,
     peak_dbfs: f32,
+    /// Quiet samples at the end of the audio so far.
+    quiet_run: u64,
+    soft: u64,
+    hard: u64,
+    pause: u64,
 }
 
 impl Cutter {
-    /// `now`: absolute index one past the newest sample; `chunk_dbfs`: level of
-    /// the chunk just fed to VAD. True = cut the utterance here.
-    fn update(&mut self, now: u64, chunk_dbfs: f32) -> bool {
-        let started = *self.started.get_or_insert_with(|| {
+    fn new(t: &Timing) -> Self {
+        Self {
+            started: None,
+            peak_dbfs: f32::NEG_INFINITY,
+            quiet_run: 0,
+            soft: t.soft_samples(),
+            hard: t.hard_samples(),
+            pause: t.pause_samples(),
+        }
+    }
+
+    /// `now`: absolute index one past the newest sample; `chunk`: the samples
+    /// just fed to VAD. True = cut the utterance here (at the chunk's end, so
+    /// inside the pause when it is one).
+    fn update(&mut self, now: u64, chunk: &[f32]) -> bool {
+        if self.started.is_none() {
+            self.started = Some(now - chunk.len() as u64);
             self.peak_dbfs = f32::NEG_INFINITY;
-            now
-        });
-        self.peak_dbfs = self.peak_dbfs.max(chunk_dbfs);
-        should_cut(now - started, chunk_dbfs, self.peak_dbfs)
+            self.quiet_run = 0;
+        }
+        for frame in chunk.chunks(CUT_FRAME) {
+            let db = rms_dbfs(frame);
+            self.peak_dbfs = self.peak_dbfs.max(db);
+            if db <= self.peak_dbfs - CUT_QUIET_DB {
+                self.quiet_run += frame.len() as u64;
+            } else {
+                self.quiet_run = 0;
+            }
+        }
+        let len = now - self.started.unwrap_or(now);
+        should_cut(len, self.quiet_run, self.soft, self.hard, self.pause)
     }
 
     fn reset(&mut self) {
@@ -305,8 +392,8 @@ impl Cutter {
     }
 }
 
-fn should_cut(len: u64, chunk_dbfs: f32, peak_dbfs: f32) -> bool {
-    len >= HARD_CUT_SAMPLES || (len >= SOFT_CUT_SAMPLES && chunk_dbfs <= peak_dbfs - CUT_QUIET_DB)
+fn should_cut(len: u64, quiet_run: u64, soft: u64, hard: u64, pause: u64) -> bool {
+    len >= hard || (len >= soft && quiet_run > 0 && quiet_run >= pause)
 }
 
 /// RMS level of a segment in dBFS (−∞ for silence).
@@ -372,7 +459,7 @@ fn asr_worker(
             threshold: 0.5,
             // Utterance boundaries: a 350 ms pause ends a sentence; past 8 s
             // VAD accepts a shorter pause (the hard cut is `Cutter`, below).
-            min_silence_duration: 0.35,
+            min_silence_duration: cfg.timing.min_silence_s,
             min_speech_duration: 0.25,
             window_size: 512,
             max_speech_duration: 8.0,
@@ -398,9 +485,10 @@ fn asr_worker(
     let drain = |vad: &VoiceActivityDetector, history: &History, utterance: &mut Vec<f32>, filter: &mut UtteranceFilter| {
         while let Some(seg) = vad.front() {
             let samples = seg.samples();
+            let start = seg.start().max(0) as u64;
+            let (start_ms, end_ms) = (start / 16, (start + samples.len() as u64) / 16);
             let text = if UtteranceFilter::audio_ok(samples) {
                 // Pre-roll from our own history, then the segment itself.
-                let start = seg.start().max(0) as u64;
                 utterance.clear();
                 history.copy_range(start.saturating_sub(PRE_ROLL_SAMPLES as u64), start, utterance);
                 utterance.extend_from_slice(samples);
@@ -412,7 +500,8 @@ fn asr_worker(
             if text.is_empty() || !filter.accept(&text) {
                 continue;
             }
-            let dropped = queue.push(text);
+            sink(LocalEvent::Transcript { src: text.clone(), start_ms, end_ms });
+            let dropped = queue.push(Utterance { text, start_ms, end_ms });
             if dropped > 0 {
                 status(sink, "backlog_skipped", Some(dropped.to_string()));
             }
@@ -420,7 +509,7 @@ fn asr_worker(
     };
 
     let mut samples: Vec<f32> = Vec::with_capacity(8192);
-    let mut cutter = Cutter::default();
+    let mut cutter = Cutter::new(&cfg.timing);
     for pcm in audio_rx {
         if cancel.load(Ordering::SeqCst) {
             break;
@@ -433,7 +522,7 @@ fn asr_worker(
         history.push(&samples);
         vad.accept_waveform(&samples);
         if vad.detected() {
-            if cutter.update(history.end, rms_dbfs(&samples)) {
+            if cutter.update(history.end, &samples) {
                 // Ends the current segment where it stands; VAD keeps running.
                 vad.flush();
                 cutter.reset();
@@ -474,7 +563,7 @@ fn llm_worker(
     };
     status(sink, "ready", None);
 
-    while let Some(src) = queue.pop() {
+    while let Some(Utterance { text: src, start_ms, end_ms }) = queue.pop() {
         if cancel.load(Ordering::SeqCst) {
             break;
         }
@@ -484,8 +573,9 @@ fn llm_worker(
             target_lang: &cfg.target_lang_name,
             glossary: &cfg.glossary,
         };
-        match translator.translate(&req, cancel) {
-            Ok(tgt) if !tgt.is_empty() => sink(LocalEvent::Result { src, tgt }),
+        let mut partial = |tgt: &str| sink(LocalEvent::Partial { tgt: tgt.to_string(), start_ms });
+        match translator.translate(&req, cancel, &mut partial) {
+            Ok(tgt) if !tgt.is_empty() => sink(LocalEvent::Result { src, tgt, start_ms, end_ms }),
             Ok(_) => {}
             Err(e) => sink(LocalEvent::Error { code: "translate".into(), message: e }),
         }
@@ -499,20 +589,41 @@ mod tests {
     #[test]
     fn cutter_soft_and_hard_caps() {
         let s = SAMPLE_RATE as u64;
-        // Under 8 s: never, however quiet the chunk.
-        assert!(!should_cut(7 * s, -80.0, -20.0));
-        // 8–12 s: only at a chunk ≥ 15 dB under the utterance's peak.
-        assert!(!should_cut(9 * s, -30.0, -20.0));
-        assert!(should_cut(9 * s, -35.0, -20.0));
-        // 12 s: always.
-        assert!(should_cut(12 * s, -20.0, -20.0));
-        // Stateful wrapper: start is the first speech chunk, peak tracks the loudest.
-        let mut c = Cutter::default();
-        assert!(!c.update(3200, -20.0)); // speech starts at 3200
-        assert!(!c.update(3200 + 9 * s, -25.0)); // 9 s in, not quiet enough
-        assert!(c.update(3200 + 10 * s, -36.0)); // quiet chunk → cut
+        let (soft, hard, pause) = (8 * s, 12 * s, s / 5);
+        // Under the soft cut: never, however long the pause.
+        assert!(!should_cut(7 * s, s, soft, hard, pause));
+        // Between: only once the audio has been quiet for `pause`.
+        assert!(!should_cut(9 * s, 0, soft, hard, pause));
+        assert!(!should_cut(9 * s, s / 10, soft, hard, pause));
+        assert!(should_cut(9 * s, s / 5, soft, hard, pause));
+        assert!(!should_cut(9 * s, 0, soft, hard, 0), "pause 0 still needs a quiet frame");
+        // Hard cut: always.
+        assert!(should_cut(12 * s, 0, soft, hard, pause));
+        // Timing clamps: hard never below soft, never past what History keeps.
+        let t = Timing { soft_cut_s: 5.0, hard_cut_s: 3.0, ..Timing::default() };
+        assert_eq!(t.hard_samples(), t.soft_samples());
+        assert_eq!(Timing { hard_cut_s: 60.0, ..Timing::default() }.hard_samples(), (MAX_HARD_CUT_S * 16000.0) as u64);
+
+        // Stateful: 100 ms chunks of loud speech, then quiet ones.
+        let t = Timing { soft_cut_s: 8.0, hard_cut_s: 12.0, pause_s: 0.2, ..Timing::default() };
+        let mut c = Cutter::new(&t);
+        let (loud, quiet) = (vec![0.1f32; 1600], vec![0.001f32; 1600]);
+        let mut now = 0;
+        let mut feed = |c: &mut Cutter, chunk: &[f32]| {
+            now += chunk.len() as u64;
+            c.update(now, chunk)
+        };
+        for _ in 0..90 {
+            assert!(!feed(&mut c, &loud)); // 9 s of speech, no pause
+        }
+        assert!(!feed(&mut c, &quiet), "100 ms of quiet is shorter than the pause");
+        assert!(feed(&mut c, &quiet), "200 ms of quiet → cut");
         c.reset();
-        assert!(!c.update(3200 + 11 * s, -36.0), "after a cut the count restarts");
+        assert!(!feed(&mut c, &quiet), "after a cut the count restarts");
+        // Without any pause the hard cut still fires.
+        let mut c = Cutter::new(&t);
+        let fired = (0..130).position(|_| feed(&mut c, &loud));
+        assert_eq!(fired, Some(119), "hard cut at 12 s");
     }
 
     #[test]
@@ -568,11 +679,11 @@ mod tests {
         let q = UtteranceQueue::new();
         let mut dropped = 0;
         for i in 0..10 {
-            dropped += q.push(format!("s{i}"));
+            dropped += q.push(Utterance { text: format!("s{i}"), start_ms: i * 1000, end_ms: i * 1000 + 900 });
         }
         assert_eq!(dropped, 10 - UTTERANCE_QUEUE_MAX);
         q.finish();
-        let rest: Vec<String> = std::iter::from_fn(|| q.pop()).collect();
+        let rest: Vec<String> = std::iter::from_fn(|| q.pop().map(|u| u.text)).collect();
         assert_eq!(rest, vec!["s6", "s7", "s8", "s9"]);
     }
 }

@@ -3037,7 +3037,7 @@ class App {
             endpointDelay: settings.endpoint_delay || 1500,
         });
 
-        // Start audio capture — Rust batches audio every 200ms, JS just forwards
+        // Start audio capture — Rust batches audio every 100ms, JS just forwards
         try {
             let audioChunkCount = 0;
 
@@ -3068,7 +3068,7 @@ class App {
 
     async _startLocalMode(settings) {
         console.log('[App] Starting Local engine (X-ASR + Hy-MT2, in-process)...');
-        this.transcriptUI.provider = 'soniox';
+        this.transcriptUI.provider = 'local';
         this._updateStatus('connecting');
 
         // Never start a session that can't run (start() normally checked already).
@@ -3101,15 +3101,20 @@ class App {
                 if (n > 0) this._showToast(`⏩ Bỏ qua ${n} câu để bám kịp`, 'error');
             }
         };
-        this.localClient.onResult = (src, tgt) => {
-            // Chase effect: original first (dim), translation right after.
-            if (src) this.transcriptUI.addOriginal(src);
-            setTimeout(() => {
-                if (tgt) {
-                    this.transcriptUI.addTranslation(tgt);
-                    this._speakIfEnabled(tgt);
-                }
-            }, 80);
+        // The source shows the moment it is recognised, the translation grows
+        // word by word, and the final text replaces it — keyed by the
+        // utterance's start so a backlog never pairs them up wrong.
+        this.localClient.onTranscript = (src, startMs) => {
+            if (src) this.transcriptUI.addOriginal(src, null, null, startMs);
+        };
+        this.localClient.onPartial = (tgt, startMs) => {
+            this.transcriptUI.setPartial(startMs, tgt);
+        };
+        this.localClient.onResult = (src, tgt, startMs) => {
+            if (tgt) {
+                this.transcriptUI.addTranslation(tgt, { key: startMs, original: src });
+                this._speakIfEnabled(tgt);
+            }
             sessionStore.addSegment(src || '', tgt || '');
             this._autoMarkExam(src || '');
         };

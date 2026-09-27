@@ -13,6 +13,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
@@ -26,6 +27,8 @@ use llama_cpp_2::TokenToStringError;
 /// Context window per translation: instruction + glossary hits + sentence + output.
 const N_CTX: u32 = 2048;
 const MAX_NEW_TOKENS: usize = 256;
+/// How often a growing translation is reported to the UI.
+const PARTIAL_EVERY: Duration = Duration::from_millis(120);
 /// Glossary entries injected per sentence (only those whose source term occurs in it).
 const MAX_GLOSSARY_HITS: usize = 12;
 
@@ -170,9 +173,13 @@ impl Llm {
     /// Greedy decoding: deterministic, and measured on 25 lecture sentences
     /// Hy-MT2 needs no sampling tricks to stay clean (0 untranslated Chinese
     /// fragments, vs 15/25 for the former Qwen2.5-3B default).
-    pub fn translate(&self, req: &TranslateRequest, cancel: &AtomicBool) -> Result<String, String> {
+    ///
+    /// `partial` gets the translation so far, whole words only, at most every
+    /// PARTIAL_EVERY while tokens come out, so the UI can show the first
+    /// words before the sentence is done.
+    pub fn translate(&self, req: &TranslateRequest, cancel: &AtomicBool, partial: &mut dyn FnMut(&str)) -> Result<String, String> {
         let prompt = self.render(req)?;
-        self.generate(&prompt, LlamaSampler::greedy(), cancel)
+        self.generate(&prompt, LlamaSampler::greedy(), cancel, partial)
     }
 
     /// The full prompt text for one sentence, special tokens included.
@@ -204,7 +211,13 @@ impl Llm {
     }
 
     /// Greedy/sampled completion of an already rendered prompt.
-    fn generate(&self, prompt: &str, mut sampler: LlamaSampler, cancel: &AtomicBool) -> Result<String, String> {
+    fn generate(
+        &self,
+        prompt: &str,
+        mut sampler: LlamaSampler,
+        cancel: &AtomicBool,
+        partial: &mut dyn FnMut(&str),
+    ) -> Result<String, String> {
         let backend = backend()?;
         let add_bos = if needs_bos(self.bos.as_deref(), prompt) {
             AddBos::Always
@@ -246,6 +259,8 @@ impl Llm {
             .map_err(|e| format!("prompt decode: {e}"))?;
 
         let mut out: Vec<u8> = Vec::with_capacity(512);
+        // None until the first report: the first words go out at once.
+        let mut last_partial: Option<Instant> = None;
         // `pos` is the KV position of each newly generated token.
         for pos in (tokens.len() as i32..).take(MAX_NEW_TOKENS) {
             if cancel.load(Ordering::SeqCst) {
@@ -258,7 +273,19 @@ impl Llm {
             }
             // Bytes, not strings: a UTF-8 character (Chinese, Vietnamese
             // diacritics) can span several tokens.
-            out.extend(self.piece_bytes(tok)?);
+            let piece = self.piece_bytes(tok)?;
+            // A piece opening with a space starts a new word, so `out` holds
+            // whole words: report them (no half word, no split character).
+            if piece.first() == Some(&b' ') && last_partial.is_none_or(|t| t.elapsed() >= PARTIAL_EVERY) {
+                if let Ok(so_far) = std::str::from_utf8(&out) {
+                    let so_far = clean_output(so_far);
+                    if !so_far.is_empty() {
+                        partial(&so_far);
+                        last_partial = Some(Instant::now());
+                    }
+                }
+            }
+            out.extend(piece);
             batch.clear();
             batch
                 .add(tok, pos, &[0], true)
@@ -509,10 +536,22 @@ mod tests {
             "这家公司的市盈率是二十五倍，市净率是三点二倍，比行业平均水平高不少。",
         ] {
             let t = std::time::Instant::now();
+            let mut partials: Vec<(String, std::time::Duration)> = Vec::new();
             let out = llm
-                .translate(&req(text, "Chinese", "Vietnamese", &glossary), &cancel)
+                .translate(&req(text, "Chinese", "Vietnamese", &glossary), &cancel, &mut |p| {
+                    partials.push((p.to_string(), t.elapsed()))
+                })
                 .expect("translate");
             eprintln!("{text}\n → {out}   ({:?})", t.elapsed());
+            for (p, at) in &partials {
+                eprintln!("   partial {at:?}: {p}");
+                // Whole words of the final text, never a half word.
+                assert!(out.starts_with(p.as_str()), "partial {p:?} is not a prefix of {out:?}");
+                assert!(
+                    out[p.len()..].starts_with(' ') || out.len() == p.len(),
+                    "partial {p:?} ends mid-word in {out:?}"
+                );
+            }
             assert!(!out.is_empty());
             assert!(
                 !out.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)),
