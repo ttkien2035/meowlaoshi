@@ -31,4 +31,7 @@ test('finals are shown per sentence and translations pair with shown sources', (
     // <end> flushes an open source sentence and clears the provisional text.
     c._handleResponse({ tokens: [tok('好的', 'original'), tok('<end>', 'original')] });
     assert.deepEqual(ev.slice(-2), [['zh', '好的'], ['prov', '']]);
+    // Its translation arrives ~0.8 s later and must go out at once.
+    c._handleResponse({ tokens: [tok('Được.', 'translation')] });
+    assert.deepEqual(ev.filter((e) => e[0] === 'vi').at(-1), ['vi', 'Được.']);
 });

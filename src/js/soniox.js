@@ -36,13 +36,13 @@ import { budgetContext } from './glossary/index.js';
 
 /**
  * Split `text` into finished sentences and the open remainder. A sentence
- * ends at 。！？；, or at .!? followed by a space (so "3.2" stays whole).
+ * ends at 。！？, or at .!? followed by a space (so "3.2" stays whole).
  * With `all`, the remainder is a sentence too.
  */
 export function splitSentences(text, all) {
     const out = [];
     // Body: anything but a sentence mark, or a .!? glued to what follows ("3.2").
-    const re = /(?:[^。！？；.!?]|[.!?](?!\s|$))*(?:[。！？；]+|[.!?]+(?=\s|$))\s*/gy;
+    const re = /(?:[^。！？.!?]|[.!?](?!\s|$))*(?:[。！？]+|[.!?]+(?=\s|$))\s*/gy;
     let pos = 0;
     for (let m; (m = re.exec(text));) {
         if (m[0].trim()) out.push(m[0].trim());
@@ -226,10 +226,9 @@ export class SonioxClient {
                         const finals = data.tokens.filter((t) => t.is_final);
                         if (finals.length > 0) this._handleResponse({ ...data, tokens: finals });
                     }
-                    if (data.finished || data.error_code) {
-                        this._flushSentences(true);
-                        this._closeOldWs(newWs);
-                    }
+                    // Its tail goes to the shared buffers and flushes at its own
+                    // sentence end; flushing here would cut the new socket's open sentence.
+                    if (data.finished || data.error_code) this._closeOldWs(newWs);
                     return;
                 }
                 if (data.finished) this._flushSentences(true);
@@ -477,7 +476,6 @@ export class SonioxClient {
             this._unpaired = Math.max(0, this._unpaired - 1);
             this.onTranslation?.(text);
         }
-        if (all) this._unpaired = 0;
     }
 
     // ─── Session Timer ────────────────────────────────────────
