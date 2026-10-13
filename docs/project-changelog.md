@@ -7,6 +7,15 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## Unreleased
+
+### New
+- **Chinese line above the Vietnamese line** in the normal (one-column) view, so the source no longer vanishes once its translation arrives. The two-column view is unchanged.
+- **Soniox: one line per sentence.** A line used to start at every result Soniox sent — a short pause by the lecturer broke the text into fragments (54 lines in 2 minutes of a real lecture). Text now waits for the end of the sentence (。！？ or a full stop before a space): the same 2 minutes give 23 sentence pairs, each Chinese sentence matched to its translation. Words still show live while the sentence is open.
+
+### Fixed
+- A source sentence that never received a translation was deleted from the screen after 10 s; it now stays as a Chinese-only line.
+
 ## v1.1.0 - 2026-09-27
 
 Keeping up with the lecturer: translations now appear sooner in both Soniox and Local mode, without losing accuracy.

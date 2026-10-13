@@ -407,13 +407,15 @@ export class TranscriptUI {
         if (speakerChanged) this._labelSpeaker = seg.speaker;
         if (langChanged) this._labelLang = seg.language;
 
-        // Single column: hidden until translated (single view shows translations only).
+        // Single column: the source line above the translation, shown as soon
+        // as the source is known (the translation reads "…" until it arrives).
         const block = el('div', 'seg-block');
         if (speakerChanged) block.append(el('span', 'speaker-label', `Speaker ${seg.speaker}:`), ' ');
         if (langChanged) block.append(el('span', 'lang-badge', this._langEmoji(seg.language)), ' ');
-        const blockText = el('div', 'seg-translated');
-        block.appendChild(blockText);
-        block.hidden = true;
+        const blockOrig = el('div', 'seg-original', seg.original || '');
+        const blockText = el('div', 'seg-translated pending', '…');
+        block.append(blockOrig, blockText);
+        block.hidden = !seg.original;
 
         // Dual: source now, target "..." until the translation arrives.
         const srcWrap = el('div', 'seg-pair');
@@ -431,15 +433,21 @@ export class TranscriptUI {
         this.contentEl.insertBefore(block, this._prov.block);
         this.srcPanel.insertBefore(srcWrap, this._prov.src);
         this.tgtPanel.insertBefore(tgtWrap, this._prov.tgt);
-        seg.nodes = { block, blockText, srcWrap, tgtWrap, tgtText, markEls: [] };
+        seg.nodes = { block, blockOrig, blockText, srcWrap, srcText, tgtWrap, tgtText, markEls: [] };
     }
 
     _paintTranslation(seg) {
         const n = seg.nodes;
         if (!n) return;
         const low = seg.confidence !== null && seg.confidence !== undefined && seg.confidence < 0.7;
+        // A segment made by addTranslation({ original }) has no source node text yet.
+        if (n.blockOrig.textContent !== seg.original) {
+            n.blockOrig.textContent = seg.original;
+            n.srcText.textContent = seg.original;
+        }
+        n.blockOrig.hidden = !seg.original;
         n.blockText.textContent = seg.translation;
-        n.blockText.classList.toggle('low-confidence', low);
+        n.blockText.className = low ? 'seg-translated low-confidence' : 'seg-translated';
         n.block.hidden = false;
         n.tgtText.textContent = seg.translation;
         n.tgtText.className = low ? 'seg-text low-confidence' : 'seg-text';
@@ -605,8 +613,10 @@ export class TranscriptUI {
     }
 
     /**
-     * Drop originals that never got a translation: older than
-     * STALE_ORIGINAL_MS, or beyond MAX_PENDING_ORIGINALS pending (oldest first).
+     * Originals that never got a translation — older than STALE_ORIGINAL_MS,
+     * or beyond MAX_PENDING_ORIGINALS pending (oldest first) — stop waiting:
+     * they stay on screen as source-only lines, and a later translation goes
+     * to a newer one.
      */
     _cleanupStaleOriginals() {
         if (this._pending === 0) return;
@@ -618,9 +628,13 @@ export class TranscriptUI {
             if (seg.status !== 'original') continue;
             seen++;
             if (now - seg.createdAt > STALE_ORIGINAL_MS || kept >= MAX_PENDING_ORIGINALS) {
-                this._unmount(seg);
-                this.segments.splice(i, 1); // i is near the end: cheap
+                seg.status = 'untranslated';
                 this._pending--;
+                const n = seg.nodes;
+                if (n) {
+                    n.blockText.hidden = true;
+                    n.tgtText.textContent = '';
+                }
             } else {
                 kept++;
             }

@@ -412,3 +412,12 @@ QA chạy "bài test người mới" ở tiêu chí nghiệm thu Commit E, thêm
   - hai cột: chữ Trung hiện trước, cột dịch "..." rồi chữ dần;
   - giảng liền mạch: câu ra đều đặn mỗi ~4–8 s;
   - không có toast "Bỏ qua N câu" trong buổi bình thường.
+
+### Soniox: dòng Trung + dòng Việt, không vụn câu — đã làm (kỹ sư trưởng, 2026-10-13; phản hồi của Kiên sau 1 tuần dùng)
+
+- Phản hồi: chủ yếu dùng Soniox (thấy ổn hơn Local); muốn một dòng Trung và một dòng Việt; "dịch ra tiếng Việt là mất tiếng Trung", "thầy cô ngưng một chút là ngắt câu liền".
+- Nguyên nhân: `soniox.js` tạo một dòng cho **mỗi gói kết quả** Soniox gửi (không phải theo câu); chế độ một cột chỉ hiện bản dịch. Không phải do `max_endpoint_delay_ms` (2 phút bài giảng thật chỉ có 2 `<end>`), nên giữ 1,5 s.
+- Sửa: gom token final vào bộ đệm, phát theo câu (。！？； hoặc .!? trước khoảng trắng — "0.68%" không bị cắt); bản dịch chỉ phát khi đã có câu nguồn tương ứng (giữ cặp 1:1 cho cả `sessionStore`); xả hết khi `<end>`, `finished`, ngắt kết nối và khi socket cũ kết thúc lúc đổi phiên 3 phút. Chữ final đang chờ hết câu vẫn hiện ở dòng tạm. Đo trên log thật 2 phút: 54 dòng → 23 cặp câu, ghép đúng hết.
+- UI một cột: `.seg-original` (CSS có sẵn) trên `.seg-translated`; khối hiện ngay khi có câu nguồn, bản dịch "…" tới khi về. Câu nguồn quá 10 s không có bản dịch **giữ lại** trên màn hình (trước đây bị xoá — chính là "mất tiếng Trung").
+- Test: `src/js/soniox.test.mjs` (tách câu, ghép cặp, `<end>`); jsdom (không commit). Soniox không có model mới (vẫn `stt-rt-v5`).
+- **QA trên Mac:** 10 phút giảng thật: mỗi câu Trung có đúng câu Việt dưới nó; không còn dòng vụn khi thầy ngừng ngắn; đổi hồ sơ môn giữa chừng (reset phiên) không mất câu cuối; chế độ hai cột như cũ.
