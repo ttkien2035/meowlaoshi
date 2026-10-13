@@ -7,7 +7,18 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
-## Unreleased
+## v1.2.0 - 2026-10-13
+
+Soniox shows one line per sentence, Chinese above Vietnamese — from a week of real lectures.
+
+### ⬇️ Which file to download
+
+| Your Mac | File |
+|---|---|
+| Apple silicon (M1 or later) | `MeowLaoshi_1.2.0_aarch64.dmg` |
+| Intel | `MeowLaoshi_1.2.0_x64.dmg` |
+
+Already installed? Update from inside the app: **Cài đặt › Giới thiệu › Cập nhật**. New installs: see the first-launch steps in the v1.0.0 notes below (System Settings › Privacy & Security › **Open Anyway**, once).
 
 ### New
 - **Chinese line above the Vietnamese line** in the normal (one-column) view, so the source no longer vanishes once its translation arrives. The two-column view is unchanged.
