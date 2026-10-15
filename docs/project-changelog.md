@@ -7,7 +7,18 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
-## Unreleased
+## v1.2.1 - 2026-10-15
+
+Soniox translation keeps up with the lecturer again: each clause is translated as soon as it is heard.
+
+### ⬇️ Which file to download
+
+| Your Mac | File |
+|---|---|
+| Apple silicon (M1 or later) | `MeowLaoshi_1.2.1_aarch64.dmg` |
+| Intel | `MeowLaoshi_1.2.1_x64.dmg` |
+
+Already installed? Update from inside the app: **Cài đặt › Giới thiệu › Cập nhật**. New installs: see the first-launch steps in the v1.0.0 notes below (System Settings › Privacy & Security › **Open Anyway**, once).
 
 ### Fixed
 - **Soniox translation no longer waits for the end of the sentence.** v1.2.0 held a line until a full stop, so in run-on speech (commas only, as lecturers talk) the Vietnamese arrived only after a whole paragraph. Soniox finalizes the source one clause at a time and sends that clause's translation right after it, so each clause now shows at once (≈ 0.05 s after its source) and clauses join the same line until the sentence ends, or at 80 characters at the latest.
