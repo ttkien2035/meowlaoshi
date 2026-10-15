@@ -7,7 +7,18 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
-## Unreleased
+## v1.2.2 - 2026-10-15
+
+Each Vietnamese line now translates exactly the Chinese line above it.
+
+### ⬇️ Which file to download
+
+| Your Mac | File |
+|---|---|
+| Apple silicon (M1 or later) | `MeowLaoshi_1.2.2_aarch64.dmg` |
+| Intel | `MeowLaoshi_1.2.2_x64.dmg` |
+
+Already installed? Update from inside the app: **Cài đặt › Giới thiệu › Cập nhật**. New installs: see the first-launch steps in the v1.0.0 notes below (System Settings › Privacy & Security › **Open Anyway**, once).
 
 ### Fixed
 - **Chinese and Vietnamese lines out of step (v1.2.1).** Lines were paired by counting Soniox messages, but Soniox sometimes translates two or three Chinese clauses in one message; each time, every later Vietnamese line slid one clause further from its Chinese line. A line is now one Chinese/Vietnamese pair that only closes right after its translation arrives, so the two sides cannot drift. Checked on three real 5-minute lectures (0 lines out of step, against 12 and 24 with v1.2.1). The study library saves the same pairs as the screen (it was out of step too).
