@@ -62,20 +62,19 @@ export class SonioxClient {
         this.onBacklog = null; // (active: boolean, skippedSeconds: number) => void
 
         // Callbacks
-        this.onOriginal = null;       // (text, speaker, language, append) => {} — append: same line as the last clause
-        this.onTranslation = null;    // (text, append) => {}
+        this.onOriginal = null;       // (text, speaker, language, append) => {} — append: same line as the previous clause
+        this.onTranslation = null;    // (text, append) => {} — append: the line already has a translation
         this.onProvisional = null;    // (text, speaker, language) => {}
         this.onStatusChange = null;   // (status) => {}
         this.onError = null;          // (message, kind) => {} — kind: 'auth' | 'credits' | 'lost' | undefined
         this.onConfidence = null;     // (avgConfidence) => {}
-        // Soniox finalizes the source one clause at a time (ending in ，or 。)
-        // and sends that clause's translation right after it. Clauses are
-        // shown at once; a display line stays open until a sentence end (or
-        // LINE_MAX_CHARS), so a pause does not start a new line.
-        this._srcOpen = false;   // the current source line takes more clauses
-        this._srcLineChars = 0;
-        this._closes = [];       // per source clause shown: did it close the line?
-        this._tgtOpen = false;
+        // One display line = one source/translation pair. Soniox finalizes the
+        // source a clause at a time, and each translation message translates
+        // every source clause sent since the previous one (369/371 messages on
+        // three real lectures; it sometimes merges 2-3 clauses). So a line may
+        // only close right after a translation, when both sides are in step —
+        // pairing by message count drifts for good at the first merge.
+        this._line = null; // { chars, translated, pending, sentenceEnd, end }
     }
 
     /**
@@ -88,6 +87,7 @@ export class SonioxClient {
         this._intentionalDisconnect = false;
         this._reconnectAttempts = 0;
         this._recentTranslations = [];
+        this._line = null;
 
         if (!apiKey) {
             this._setStatus('error');
@@ -420,23 +420,25 @@ export class SonioxClient {
         }
 
         if (originalText.trim()) {
-            this.onOriginal?.(originalText, speaker, language, this._srcOpen);
-            this._srcLineChars += originalText.length;
-            const close = hasEnd || endsSentence(originalText) || this._srcLineChars >= LINE_MAX_CHARS;
-            this._closes.push(close);
-            this._srcOpen = !close;
-            if (close) this._srcLineChars = 0;
-        } else if (hasEnd) {
-            this._srcOpen = false;
-            if (this._closes.length) this._closes[this._closes.length - 1] = true;
+            this.onOriginal?.(originalText, speaker, language, !!this._line);
+            this._line ??= { chars: 0, translated: false, end: false };
+            this._line.chars += originalText.length;
+            this._line.pending = true;
+            this._line.sentenceEnd = endsSentence(originalText);
+        }
+        if (hasEnd && this._line) {
+            this._line.end = true;
+            if (!this._line.pending) this._line = null; // already translated
         }
         if (translationText.trim()) {
-            this.onTranslation?.(translationText, this._tgtOpen);
+            const line = this._line;
+            this.onTranslation?.(translationText, !!line?.translated);
             this._addToHistory(translationText);
-            // The translation line closes where its source line did; without a
-            // source clause on record (reconnect) fall back to its own punctuation.
-            const close = this._closes.length ? this._closes.shift() : endsSentence(translationText);
-            this._tgtOpen = !close;
+            if (line) {
+                line.translated = true;
+                line.pending = false;
+                if (line.end || line.sentenceEnd || line.chars >= LINE_MAX_CHARS) this._line = null;
+            }
         }
 
         // Emit provisional text with speaker + language

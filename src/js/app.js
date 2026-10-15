@@ -607,22 +607,26 @@ class App {
             this._toggleTTS();
         });
 
-        // Wire Soniox callbacks. Soniox emits original + translation as
-        // separate finals; we FIFO-pair them into the session store so each
-        // saved segment has both source and target text.
-        this._sonioxOriginalQueue = [];
+        // Wire Soniox callbacks. The client pairs source and translation per
+        // display line; the saved session keeps exactly the same pairs.
         sonioxClient.onOriginal = (text, speaker, language, append) => {
-            if (append) this.transcriptUI.appendOriginal(text);
-            else this.transcriptUI.addOriginal(text, speaker, language);
-            this._sonioxOriginalQueue.push(text);
+            if (append) {
+                this.transcriptUI.appendOriginal(text);
+                sessionStore.appendToLastSegment(text, '');
+            } else {
+                this.transcriptUI.addOriginal(text, speaker, language);
+                sessionStore.addSegment(text, '');
+            }
         };
 
         sonioxClient.onTranslation = (text, append) => {
             if (append) this.transcriptUI.appendTranslation(text);
             else this.transcriptUI.addTranslation(text);
-            const src = this._sonioxOriginalQueue.shift() || '';
-            sessionStore.addSegment(src, text);
-            this._autoMarkExam(src);
+            // A translation with no source line of its own (rare) is saved alone.
+            const last = sessionStore.lastSegment();
+            if (append || (last && !last.tgt)) sessionStore.appendToLastSegment('', text);
+            else sessionStore.addSegment('', text);
+            this._autoMarkExam(sessionStore.lastSegment()?.src || '');
             this._speakIfEnabled(text);
         };
 
@@ -3322,9 +3326,6 @@ class App {
         }
 
         audioPlayer.stop();
-
-        // Drain any leftover Soniox originals that didn't get paired
-        if (this._sonioxOriginalQueue) this._sonioxOriginalQueue.length = 0;
 
         // Close the chunk and persist the whole session (md + json sidecar).
         // Transcript stays on screen — clearSession is no longer called here

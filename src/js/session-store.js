@@ -128,6 +128,16 @@ export class SessionStore {
         this._scheduleAutosave();
     }
 
+    /** Add text to the newest segment of the live chunk (or start one). */
+    appendToLastSegment(src, tgt) {
+        const seg = this.currentChunk?.segments.at(-1);
+        if (!seg) return this.addSegment(src, tgt);
+        seg.src += src || '';
+        seg.tgt += tgt || '';
+        this._mutations++;
+        this._scheduleAutosave();
+    }
+
     endChunk() {
         this._cancelAutosave();
         if (!this.currentChunk) return;

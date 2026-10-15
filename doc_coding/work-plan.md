@@ -429,3 +429,11 @@ QA chạy "bài test người mới" ở tiêu chí nghiệm thu Commit E, thêm
 - Sửa `soniox.js`: phát mỗi vế ngay với cờ `append` (nối vào dòng đang mở); dòng nguồn đóng khi hết câu, `<end>`, hoặc ≥ 80 chữ; dòng dịch đóng **theo dòng nguồn** (hàng đợi cờ `_closes`), không theo dấu câu tiếng Việt. Bỏ `splitSentences`/bộ đệm. UI thêm `appendOriginal` / `appendTranslation`.
 - Mô phỏng log thật: 22 dòng, bản dịch hiện 0,04 s sau vế nguồn (1.2.0: đợi hết câu, có đoạn hàng chục giây). Test `soniox.test.mjs` viết lại; jsdom (không commit).
 - **QA trên Mac:** thầy nói liền mạch → chữ Việt phải hiện gần như cùng lúc với chữ Trung, cùng dòng, dòng dài tự xuống sau ~80 chữ.
+
+### Soniox: Trung–Việt lệch dòng (v1.2.1) — sửa tận gốc (kỹ sư trưởng, 2026-10-15; ảnh phản hồi của bạn gái Kiên)
+
+- Gốc: 1.2.1 ghép bản dịch với tiếng Trung **theo số gói tin** (hàng đợi `_closes`) và hai bên tự xuống dòng riêng. Log thật: Soniox đôi khi dịch gộp 2–3 vế Trung trong **một** gói (5–7 lần / 5 phút ở bài giảng đại lục), mỗi lần lệch thêm một nấc, không tự hồi. `sessionStore` cũng ghép theo kiểu đếm này nên thư viện ôn bài lệch theo.
+- Bằng chứng: 3 bài × 5 phút (Đài Loan / đại lục chính trị / đại lục 地方债), 371 gói dịch: 369 gói là bản dịch của **đúng toàn bộ** vế Trung đang chờ (2 gói còn lại chỉ khác dấu câu). Gói tin không bao giờ trộn Trung + Việt; `<end>` đi riêng.
+- Sửa: một dòng = một cặp; vế Trung nối vào dòng đang mở; gói dịch thuộc dòng đó; dòng chỉ đóng **sau** gói dịch (hết câu, `<end>`, hoặc ≥ 80 chữ) → hai bên không thể trôi. `sessionStore.appendToLastSegment` lưu đúng cặp như màn hình; bỏ `_sonioxOriginalQueue`.
+- Kiểm thử: `src/js/fixtures/soniox-*.json` (log thật, chỉ token cuối, 113 KB) + `soniox.test.mjs` (16 test; test mới **trượt trên code 1.2.1**: 12 dòng lệch). Phát lại qua `TranscriptUI` thật (jsdom, không commit): 0 cặp lệch, lưu = màn hình. Ép xen kẽ gói phiên cũ/mới lúc đổi phiên 3 phút (xấu nhất): 1 dòng tách lẻ rồi tự khớp lại.
+- **QA trên Mac:** bài giảng nói liền (đại lục) 10 phút: mỗi dòng Việt dịch đúng dòng Trung ngay trên nó; mở Thư viện ôn bài → cặp giống màn hình.

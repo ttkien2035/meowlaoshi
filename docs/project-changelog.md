@@ -7,6 +7,11 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## Unreleased
+
+### Fixed
+- **Chinese and Vietnamese lines out of step (v1.2.1).** Lines were paired by counting Soniox messages, but Soniox sometimes translates two or three Chinese clauses in one message; each time, every later Vietnamese line slid one clause further from its Chinese line. A line is now one Chinese/Vietnamese pair that only closes right after its translation arrives, so the two sides cannot drift. Checked on three real 5-minute lectures (0 lines out of step, against 12 and 24 with v1.2.1). The study library saves the same pairs as the screen (it was out of step too).
+
 ## v1.2.1 - 2026-10-15
 
 Soniox translation keeps up with the lecturer again: each clause is translated as soon as it is heard.
