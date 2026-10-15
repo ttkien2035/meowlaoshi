@@ -7,6 +7,11 @@ Format: `## v<version> - <YYYY-MM-DD>` followed by content until the next `## v`
 
 ---
 
+## Unreleased
+
+### Fixed
+- **Soniox translation no longer waits for the end of the sentence.** v1.2.0 held a line until a full stop, so in run-on speech (commas only, as lecturers talk) the Vietnamese arrived only after a whole paragraph. Soniox finalizes the source one clause at a time and sends that clause's translation right after it, so each clause now shows at once (≈ 0.05 s after its source) and clauses join the same line until the sentence ends, or at 80 characters at the latest.
+
 ## v1.2.0 - 2026-10-13
 
 Soniox shows one line per sentence, Chinese above Vietnamese — from a week of real lectures.

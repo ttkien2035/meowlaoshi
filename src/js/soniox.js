@@ -34,28 +34,13 @@ const MAX_BUFFERED_BYTES = 5 * BYTES_PER_SECOND;
 // pairs to a budget that leaves room for `general` and `text`.
 import { budgetContext } from './glossary/index.js';
 
-/**
- * Split `text` into finished sentences and the open remainder. A sentence
- * ends at 。！？, or at .!? followed by a space (so "3.2" stays whole).
- * With `all`, the remainder is a sentence too.
- */
-export function splitSentences(text, all) {
-    const out = [];
-    // Body: anything but a sentence mark, or a .!? glued to what follows ("3.2").
-    const re = /(?:[^。！？.!?]|[.!?](?!\s|$))*(?:[。！？]+|[.!?]+(?=\s|$))\s*/gy;
-    let pos = 0;
-    for (let m; (m = re.exec(text));) {
-        if (m[0].trim()) out.push(m[0].trim());
-        pos = re.lastIndex;
-        if (pos >= text.length) break;
-    }
-    let rest = text.slice(pos);
-    if (all) {
-        if (rest.trim()) out.push(rest.trim());
-        rest = '';
-    }
-    return [out, rest];
+/** True when `text` closes a sentence: 。！？, or .!? at the end ("3.2" does not). */
+export function endsSentence(text) {
+    return /[。！？]\s*$|[.!?]\s*$/.test(text);
 }
+
+/** A display line is closed at a sentence end, or here at the latest. */
+const LINE_MAX_CHARS = 80;
 
 // Keepalive: send every 15s to prevent timeout when no audio
 const KEEPALIVE_INTERVAL_MS = 15000;
@@ -77,17 +62,20 @@ export class SonioxClient {
         this.onBacklog = null; // (active: boolean, skippedSeconds: number) => void
 
         // Callbacks
-        this.onOriginal = null;       // (text, speaker, language) => {}
-        this.onTranslation = null;    // (text) => {}
+        this.onOriginal = null;       // (text, speaker, language, append) => {} — append: same line as the last clause
+        this.onTranslation = null;    // (text, append) => {}
         this.onProvisional = null;    // (text, speaker, language) => {}
         this.onStatusChange = null;   // (status) => {}
         this.onError = null;          // (message, kind) => {} — kind: 'auth' | 'credits' | 'lost' | undefined
         this.onConfidence = null;     // (avgConfidence) => {}
-        // Final text not yet shown: emitted sentence by sentence, not per
-        // response batch, so a short pause does not start a new line.
-        this._srcBuf = '';
-        this._tgtBuf = '';
-        this._unpaired = 0; // source sentences emitted, translation not yet
+        // Soniox finalizes the source one clause at a time (ending in ，or 。)
+        // and sends that clause's translation right after it. Clauses are
+        // shown at once; a display line stays open until a sentence end (or
+        // LINE_MAX_CHARS), so a pause does not start a new line.
+        this._srcOpen = false;   // the current source line takes more clauses
+        this._srcLineChars = 0;
+        this._closes = [];       // per source clause shown: did it close the line?
+        this._tgtOpen = false;
     }
 
     /**
@@ -231,7 +219,6 @@ export class SonioxClient {
                     if (data.finished || data.error_code) this._closeOldWs(newWs);
                     return;
                 }
-                if (data.finished) this._flushSentences(true);
 
                 if (data.error_code) {
                     this._handleApiError(data);
@@ -326,7 +313,6 @@ export class SonioxClient {
         this._stopSessionTimer();
         this._stopKeepalive();
         this._closeOldWs(this._drainingWs);
-        this._flushSentences(true);
 
         if (this.ws) {
             try {
@@ -433,48 +419,31 @@ export class SonioxClient {
             this.onConfidence?.(avgConfidence);
         }
 
-        this._srcBuf += originalText;
-        this._tgtBuf += translationText;
-        if (translationText.trim()) this._addToHistory(translationText);
-        this._flushSentences(hasEnd, speaker, language);
+        if (originalText.trim()) {
+            this.onOriginal?.(originalText, speaker, language, this._srcOpen);
+            this._srcLineChars += originalText.length;
+            const close = hasEnd || endsSentence(originalText) || this._srcLineChars >= LINE_MAX_CHARS;
+            this._closes.push(close);
+            this._srcOpen = !close;
+            if (close) this._srcLineChars = 0;
+        } else if (hasEnd) {
+            this._srcOpen = false;
+            if (this._closes.length) this._closes[this._closes.length - 1] = true;
+        }
+        if (translationText.trim()) {
+            this.onTranslation?.(translationText, this._tgtOpen);
+            this._addToHistory(translationText);
+            // The translation line closes where its source line did; without a
+            // source clause on record (reconnect) fall back to its own punctuation.
+            const close = this._closes.length ? this._closes.shift() : endsSentence(translationText);
+            this._tgtOpen = !close;
+        }
 
-        // Provisional = final text waiting for its sentence end + live tokens,
-        // so nothing disappears from the screen while a sentence is open.
-        const pending = this._srcBuf + provisionalText;
-        if (pending.trim()) {
-            this.onProvisional?.(pending, speaker, language);
+        // Emit provisional text with speaker + language
+        if (provisionalText.trim()) {
+            this.onProvisional?.(provisionalText, speaker, language);
         } else if (originalText.trim() || translationText.trim() || hasEnd) {
             this.onProvisional?.('');
-        }
-    }
-
-    /**
-     * Emit whole sentences from the buffers; `all` (an `<end>`, finish or
-     * disconnect) empties them. A translation sentence is only emitted
-     * against a source sentence already shown, so the display pairs stay
-     * one-to-one.
-     */
-    _flushSentences(all, speaker = null, language = null) {
-        let sentences;
-        [sentences, this._srcBuf] = splitSentences(this._srcBuf, all);
-        for (const text of sentences) {
-            this._unpaired++;
-            this.onOriginal?.(text, speaker, language);
-        }
-        [sentences, this._tgtBuf] = splitSentences(this._tgtBuf, all);
-        // shortcut: Soniox's translation chunks follow the source sentences, so
-        // extra translation sentences are rare; they wait for the next source
-        // sentence, except at `<end>`, where everything goes out as one.
-        if (!all && sentences.length > this._unpaired) {
-            const keep = sentences.splice(this._unpaired);
-            this._tgtBuf = keep.join(' ') + (this._tgtBuf ? ' ' + this._tgtBuf : '');
-        }
-        if (all && sentences.length > 1 && sentences.length > this._unpaired) {
-            sentences = [sentences.join(' ')];
-        }
-        for (const text of sentences) {
-            this._unpaired = Math.max(0, this._unpaired - 1);
-            this.onTranslation?.(text);
         }
     }
 

@@ -611,13 +611,15 @@ class App {
         // separate finals; we FIFO-pair them into the session store so each
         // saved segment has both source and target text.
         this._sonioxOriginalQueue = [];
-        sonioxClient.onOriginal = (text, speaker, language) => {
-            this.transcriptUI.addOriginal(text, speaker, language);
+        sonioxClient.onOriginal = (text, speaker, language, append) => {
+            if (append) this.transcriptUI.appendOriginal(text);
+            else this.transcriptUI.addOriginal(text, speaker, language);
             this._sonioxOriginalQueue.push(text);
         };
 
-        sonioxClient.onTranslation = (text) => {
-            this.transcriptUI.addTranslation(text);
+        sonioxClient.onTranslation = (text, append) => {
+            if (append) this.transcriptUI.appendTranslation(text);
+            else this.transcriptUI.addTranslation(text);
             const src = this._sonioxOriginalQueue.shift() || '';
             sessionStore.addSegment(src, text);
             this._autoMarkExam(src);

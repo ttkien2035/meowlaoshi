@@ -421,3 +421,11 @@ QA chạy "bài test người mới" ở tiêu chí nghiệm thu Commit E, thêm
 - UI một cột: `.seg-original` (CSS có sẵn) trên `.seg-translated`; khối hiện ngay khi có câu nguồn, bản dịch "…" tới khi về. Câu nguồn quá 10 s không có bản dịch **giữ lại** trên màn hình (trước đây bị xoá — chính là "mất tiếng Trung").
 - Test: `src/js/soniox.test.mjs` (tách câu, ghép cặp, `<end>`); jsdom (không commit). Soniox không có model mới (vẫn `stt-rt-v5`).
 - **QA trên Mac:** 10 phút giảng thật: mỗi câu Trung có đúng câu Việt dưới nó; không còn dòng vụn khi thầy ngừng ngắn; đổi hồ sơ môn giữa chừng (reset phiên) không mất câu cuối; chế độ hai cột như cũ.
+
+### Soniox: bản dịch theo từng vế, nối cùng dòng tới hết câu — đã làm (kỹ sư trưởng, 2026-10-15; phản hồi bạn gái Kiên: "chờ nguyên một đoạn dài mới dịch")
+
+- Bản 1.2.0 giữ dòng tới dấu chấm; thầy giảng liền mạch toàn dấu phẩy → cả đoạn ~250 chữ mới có bản dịch.
+- Log Soniox 2 phút giảng thật: nguồn chốt **theo từng vế** (kết thúc ，hoặc 。), bản dịch của vế về 0,1 s sau, khớp đúng vế, 1:1. Vậy không cần bộ đệm câu.
+- Sửa `soniox.js`: phát mỗi vế ngay với cờ `append` (nối vào dòng đang mở); dòng nguồn đóng khi hết câu, `<end>`, hoặc ≥ 80 chữ; dòng dịch đóng **theo dòng nguồn** (hàng đợi cờ `_closes`), không theo dấu câu tiếng Việt. Bỏ `splitSentences`/bộ đệm. UI thêm `appendOriginal` / `appendTranslation`.
+- Mô phỏng log thật: 22 dòng, bản dịch hiện 0,04 s sau vế nguồn (1.2.0: đợi hết câu, có đoạn hàng chục giây). Test `soniox.test.mjs` viết lại; jsdom (không commit).
+- **QA trên Mac:** thầy nói liền mạch → chữ Việt phải hiện gần như cùng lúc với chữ Trung, cùng dòng, dòng dài tự xuống sau ~80 chữ.

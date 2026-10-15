@@ -166,12 +166,37 @@ export class TranscriptUI {
             this.segments.push(seg);
         }
         if (key !== undefined && key !== null && this._partialKey === key) this._clearPartial();
+        this._tgtSeg = seg;
         seg.translation = text;
         seg.status = 'translated';
         this._paintTranslation(seg);
         this._setLatest(seg);
         this._newInFrame++;
         this._trim();
+        this._queue();
+    }
+
+    /** Add a clause to the newest segment's source (Soniox: same sentence). */
+    appendOriginal(text) {
+        const seg = this.segments.at(-1);
+        if (!seg) return this.addOriginal(text);
+        this._noteScroll();
+        seg.original += text;
+        const n = seg.nodes;
+        if (n) {
+            n.blockOrig.textContent = seg.original;
+            n.srcText.textContent = seg.original;
+        }
+        this._queue();
+    }
+
+    /** Add a clause to the translation that was last added. */
+    appendTranslation(text) {
+        const seg = this._tgtSeg;
+        if (!seg || seg.status !== 'translated') return this.addTranslation(text);
+        this._noteScroll();
+        seg.translation += text;
+        this._paintTranslation(seg);
         this._queue();
     }
 
@@ -474,6 +499,7 @@ export class TranscriptUI {
         const n = seg.nodes;
         if (!n) return;
         if (this._latest === seg) this._latest = null;
+        if (this._tgtSeg === seg) this._tgtSeg = null;
         n.block.remove();
         n.srcWrap.remove();
         n.tgtWrap.remove();
@@ -653,6 +679,7 @@ export class TranscriptUI {
         this.provisionalLanguage = null;
         this.sourceProvisionalText = '';
         this._partialKey = null;
+        this._tgtSeg = null;
         this.currentSpeaker = null;
         this.currentLanguage = null;
         this.lastConfidence = null;
